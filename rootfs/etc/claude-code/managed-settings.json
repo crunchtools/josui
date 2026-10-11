@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/usr/local/libexec/josui/breaker.py",
+            "command": "/usr/local/libexec/josui/hooks.py breaker",
             "timeout": 10
           }
         ]
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/usr/local/libexec/josui/audit.py",
+            "command": "/usr/local/libexec/josui/hooks.py audit",
             "timeout": 10
           }
         ]

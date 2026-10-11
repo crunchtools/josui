@@ -62,14 +62,14 @@ whatever was there.
 
 ## Layer 4 — Runtime Security & Behavioral Controls
 
-- **Circuit breakers** (`breaker.py`): 500 tool calls per conversation and 5
+- **Circuit breakers** (`hooks.py breaker`): 500 tool calls per conversation and 5
   identical calls in a row. The profile's default of 50 calls is a chat
   agent's budget; one code change here is routinely a few hundred. A tripped
   conversation is denied every further call and the trip is audited. A
   breaker that cannot read its state denies.
 - **Token budget:** the claude.ai subscription's own limits; there is no API
   key to overspend.
-- **Audit** (`audit.py`): the profile's record for every tool call, with
+- **Audit** (`hooks.py audit`): the profile's record for every tool call, with
   credential-shaped values replaced and long values cut, kept 120 days.
 - **Human in the loop:** sessions start in `acceptEdits`. File edits inside
   the mounts proceed; a shell command outside the allowlist in the mounted

@@ -15,7 +15,7 @@ All notable changes to this project are documented here. The format follows
   Trentina gateway as the one MCP server, and serves Remote Control.
 - Managed settings: the gateway is the only MCP server allowed, claude.ai
   connectors are off, and two hooks run on every tool call.
-- `audit.py`: one redacted JSON record per tool call, kept 120 days.
-- `breaker.py`: per-conversation circuit breakers on total calls and on the
+- `hooks.py audit`: one redacted JSON record per tool call, kept 120 days.
+- `hooks.py breaker`: per-conversation circuit breakers on total calls and on the
   same call repeated back to back.
 - Build workflow: hook tests, Trivy (blocking), SPDX SBOM, Quay and GHCR.

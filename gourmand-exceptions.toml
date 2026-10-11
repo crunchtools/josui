@@ -1,0 +1,26 @@
+# Gourmand exceptions. Each entry is a finding reviewed by hand and kept on
+# purpose; the justification says why.
+
+[[exceptions]]
+check = "CH009-random_scripts"
+path = "rootfs/usr/local/libexec/josui/hooks.py"
+justification = "rootfs/ is the image's filesystem overlay (COPY rootfs/ / in the Containerfile), so a file's path here is its install path. hooks.py is the hook Claude Code's managed settings run on every tool call, installed under libexec because nothing calls it by hand. It is documented in README.md and covered by tests/test_hooks.py."
+classification = "by_design"
+
+[[exceptions]]
+check = "CH001-absolute_paths"
+path = "rootfs/etc/claude-code/managed-settings.json"
+justification = "A hook command in Claude Code managed settings is run by a shell with no defined working directory, so it has to name the hook by its absolute install path inside the image."
+classification = "by_design"
+
+[[exceptions]]
+check = "CH001-absolute_paths"
+path = "deploy/josui.env.example"
+justification = "An example env file for a container deployment. The values are the host paths of bind mounts, which podman requires to be absolute; they use placeholder service names."
+classification = "by_design"
+
+[[exceptions]]
+check = "EV013-hidden_env_config"
+path = "rootfs/usr/local/libexec/josui/hooks.py"
+justification = "JOSUI_AUDIT_DIR and JOSUI_BREAKER_DIR are not toggles: they are the required locations the hooks write to, set by ENV in the Containerfile, listed in README.md's Environment table and in the module docstring. A hook receives no arguments from Claude Code beyond its command line, so the environment is the only channel, and reading them with no default makes a missing one fail loudly."
+classification = "by_design"

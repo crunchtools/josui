@@ -36,10 +36,10 @@ The container sits on an internal network with no DNS. Its only peer is the
 
 ## Controls
 
-- **Circuit breakers** (`breaker.py`, PreToolUse): `JOSUI_MAX_TOOL_CALLS` per
+- **Circuit breakers** (`hooks.py breaker`, PreToolUse): `JOSUI_MAX_TOOL_CALLS` per
   conversation (default 500) and `JOSUI_MAX_REPEAT` identical calls in a row
   (default 5). A tripped conversation stays stopped.
-- **Audit** (`audit.py`, PostToolUse): timestamp, tool, server, redacted
+- **Audit** (`hooks.py audit`, PostToolUse): timestamp, tool, server, redacted
   arguments, result and conversation, in `audit-YYYY-MM-DD.jsonl`, kept 120 days.
 - Both hooks are in `/etc/claude-code/managed-settings.json`, which the
   mounted `settings.json` cannot override.
@@ -70,6 +70,9 @@ question answered once: `podman exec -it -w <dir> <service> claude`.
 | `JOSUI_PERMISSION_MODE` | `acceptEdits` | Claude Code permission mode for new sessions. |
 | `JOSUI_MAX_TOOL_CALLS`, `JOSUI_MAX_REPEAT` | `500`, `5` | Circuit breakers. |
 | `JOSUI_AUDIT_RETENTION_DAYS` | `120` | Age at which an audit file is deleted at start. |
+| `JOSUI_AUDIT_DIR` | set in the image | Where audit files are written; mount a volume there. |
+| `JOSUI_BREAKER_DIR` | set in the image | Per-conversation breaker state, on the tmpfs. |
+| `JOSUI_CONFIG_DIR`, `JOSUI_SKILLS_DIR` | set in the image | Where the identity and skills mounts are read from. |
 
 ## Development
 

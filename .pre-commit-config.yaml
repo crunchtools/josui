@@ -1,4 +1,9 @@
 repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.11
+    hooks:
+      - id: ruff-check
+        stages: [pre-commit, pre-merge-commit]
   - repo: local
     hooks:
       - id: gourmand

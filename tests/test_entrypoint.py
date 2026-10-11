@@ -20,7 +20,6 @@ pwd > "$HOME/claude-cwd"
 """
 
 
-@unittest.skipUnless(shutil.which("jq"), "jq is not installed")
 class EntrypointTest(unittest.TestCase):
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()
@@ -30,7 +29,14 @@ class EntrypointTest(unittest.TestCase):
         self.config = self.root / "config"
         self.skills = self.root / "josui-skills"
         bin_dir = self.root / "bin"
-        for path in (self.home, self.config / "hooks", self.skills / "skills/alpha", self.skills / "skills/beta", self.skills / "templates", bin_dir):
+        for path in (
+            self.home,
+            self.config / "hooks",
+            self.skills / "skills/alpha",
+            self.skills / "skills/beta",
+            self.skills / "templates",
+            bin_dir,
+        ):
             path.mkdir(parents=True)
         (self.config / "CLAUDE.md").write_text("# Josui\n")
         (self.config / "settings.json").write_text("{}\n")
@@ -48,7 +54,9 @@ class EntrypointTest(unittest.TestCase):
             "TRENTINA_MCP_TOKEN": "s3cret-token",
         }
 
-    def run_entrypoint(self, *args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    def run_entrypoint(
+        self, *args: str, env: dict[str, str] | None = None
+    ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             ["bash", str(ENTRYPOINT), *args], env=env or self.env, capture_output=True, text=True, check=False
         )

@@ -4,9 +4,9 @@
 #   podman run -it ... quay.io/crunchtools/josui claude auth login
 set -euo pipefail
 
-config_dir=${JOSUI_CONFIG_DIR:-/etc/josui}
-skills_repo=${JOSUI_SKILLS_DIR:-/var/lib/josui/josui-skills}
-audit_dir=${JOSUI_AUDIT_DIR:-/var/log/josui}
+config_dir=${JOSUI_CONFIG_DIR:?JOSUI_CONFIG_DIR is not set}
+skills_repo=${JOSUI_SKILLS_DIR:?JOSUI_SKILLS_DIR is not set}
+audit_dir=${JOSUI_AUDIT_DIR:?JOSUI_AUDIT_DIR is not set}
 claude_dir="$HOME/.claude"
 workdir=${JOSUI_WORKDIR:-$HOME/work}
 

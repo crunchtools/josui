@@ -19,7 +19,7 @@ ARG GH_VERSION=2.102.0
 # skills' own scripts; nodejs because Claude Code installs from npm and the
 # web projects Josui works on run their unit tests with it.
 RUN microdnf install -y --setopt=install_weak_deps=0 --nodocs \
-        bash coreutils findutils grep sed gawk tar gzip which procps-ng \
+        findutils grep sed gawk tar gzip which procps-ng \
         ca-certificates git-core openssh-clients jq python3 nodejs npm && \
     curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.rpm" -o /tmp/gh.rpm && \
     rpm -i /tmp/gh.rpm && rm -f /tmp/gh.rpm && \
@@ -38,8 +38,8 @@ RUN useradd --uid 1000 --user-group --create-home --home-dir /home/josui --shell
 
 COPY rootfs/ /
 
-RUN chmod 0755 /usr/local/bin/josui-entrypoint /usr/local/libexec/josui/*.py && \
-    python3 -m py_compile /usr/local/libexec/josui/*.py && \
+RUN chmod 0755 /usr/local/bin/josui-entrypoint /usr/local/libexec/josui/hooks.py && \
+    python3 -m py_compile /usr/local/libexec/josui/hooks.py && \
     jq -e . /etc/claude-code/managed-settings.json > /dev/null
 
 # HOME is a volume: the Claude and gh logins, sessions and git identity live
@@ -48,6 +48,7 @@ ENV HOME=/home/josui \
     JOSUI_CONFIG_DIR=/etc/josui \
     JOSUI_SKILLS_DIR=/var/lib/josui/josui-skills \
     JOSUI_AUDIT_DIR=/var/log/josui \
+    JOSUI_BREAKER_DIR=/tmp/josui-breaker \
     DISABLE_AUTOUPDATER=1
 
 USER 1000
