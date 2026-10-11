@@ -1,0 +1,2 @@
+# One entry per accepted finding, each with why it is unreachable or blocked
+# upstream and when to look again. Empty until the first scan says otherwise.

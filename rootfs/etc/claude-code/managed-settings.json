@@ -1,0 +1,37 @@
+{
+  "allowedMcpServers": [
+    { "serverName": "trentina" }
+  ],
+  "disableClaudeAiConnectors": true,
+  "env": {
+    "DISABLE_AUTOUPDATER": "1",
+    "ENABLE_CLAUDEAI_MCP_SERVERS": "false",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/libexec/josui/breaker.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/libexec/josui/audit.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

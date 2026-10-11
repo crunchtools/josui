@@ -1,0 +1,49 @@
+# /srv/<service>/config/<service>.service
+#
+# A server deployment, with placeholder names and documentation addresses.
+# The real file lives in the host's private config repo. Three kinds of mount, and nothing else is writable:
+#   state      /home/josui            logins, sessions, git identity
+#   identity   /etc/josui (ro)        CLAUDE.md, settings.json, hooks/
+#              /var/lib/josui/josui-skills   checkout of the skills repo
+#   workspaces /srv/<site>            one line per site, same path as the host
+#
+# The network is internal with no DNS. Its only other member is the Trentina
+# gateway, which serves MCP and carries Claude Code's own HTTPS (client egress).
+#
+# The uid/gid maps make the container's josui (1000) the host's root for file
+# access only (drop the maps if the workspaces are not root-owned): workspaces are written by root-run site containers, and a
+# second owner in the same checkout breaks git for both. The process holds no
+# capabilities, inside or outside the user namespace.
+
+[Unit]
+Description=Podman container - agent1.example.net
+After=network-online.target gateway.example.net.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/podman pull quay.io/crunchtools/josui:latest
+ExecStart=/usr/bin/podman run --rm --name agent1.example.net \
+    --hostname agent1.example.net \
+    --label io.containers.autoupdate=registry \
+    --label PODMAN_SYSTEMD_UNIT=agent1.example.net.service \
+    --read-only --tmpfs /tmp:rw,nosuid,size=512m \
+    --cap-drop=ALL --security-opt no-new-privileges \
+    --uidmap 0:100000:1000 --uidmap 1000:0:1 --uidmap 1001:101001:64535 \
+    --gidmap 0:100000:1000 --gidmap 1000:0:1 --gidmap 1001:101001:64535 \
+    --memory=4g --memory-swap=4g --pids-limit=1024 \
+    --network agent1-net:ip=192.0.2.10 --dns=none \
+    --env-file /srv/agent1.example.net/config/josui.env \
+    -v /srv/agent1.example.net/data/state:/home/josui:Z \
+    -v /srv/agent1.example.net/data/audit:/var/log/josui:Z \
+    -v /srv/agent1.example.net/data/josui-skills:/var/lib/josui/josui-skills:Z \
+    -v /srv/agent1.example.net/config:/etc/josui:ro,Z \
+    -v /srv/site1.example.net:/srv/site1.example.net:z \
+    quay.io/crunchtools/josui:latest
+ExecStop=/usr/bin/podman stop -t 10 agent1.example.net
+ExecStopPost=/usr/bin/podman rm -f agent1.example.net
+RestartSec=30
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
