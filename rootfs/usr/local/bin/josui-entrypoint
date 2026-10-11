@@ -70,8 +70,12 @@ if [ "$#" -gt 0 ]; then
 fi
 
 cd "$workdir"
+# Remote Control redraws a terminal status screen on stdout every second.
+# Under a container runtime that is a line a second into the journal, so
+# stdout is dropped; errors still go to stderr.
 exec claude remote-control \
   --spawn same-dir \
   --capacity "${JOSUI_CAPACITY:-2}" \
   --permission-mode "${JOSUI_PERMISSION_MODE:-acceptEdits}" \
-  --remote-control-session-name-prefix "${JOSUI_NAME:-josui}"
+  --remote-control-session-name-prefix "${JOSUI_NAME:-josui}" \
+  > /dev/null

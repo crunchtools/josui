@@ -15,6 +15,8 @@ ENTRYPOINT = Path(__file__).resolve().parent.parent / "rootfs/usr/local/bin/josu
 
 FAKE_CLAUDE = """#!/bin/bash
 printf '%s\\n' "$@" > "$HOME/claude-args"
+echo "status screen"
+echo "an error" >&2
 env > "$HOME/claude-env"
 pwd > "$HOME/claude-cwd"
 """
@@ -76,6 +78,11 @@ class EntrypointTest(unittest.TestCase):
         self.assertIn("--remote-control-session-name-prefix", args)
         self.assertEqual(args[-1], "josui")
         self.assertEqual((self.home / "claude-cwd").read_text().strip(), str(self.home / "work"))
+
+    def test_remote_control_status_output_is_dropped_and_errors_are_kept(self) -> None:
+        result = self.run_entrypoint()
+        self.assertNotIn("status screen", result.stdout)
+        self.assertIn("an error", result.stderr)
 
     def test_gateway_is_merged_into_existing_state(self) -> None:
         state = self.home / ".claude.json"

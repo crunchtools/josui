@@ -18,4 +18,6 @@ All notable changes to this project are documented here. The format follows
 - `hooks.py audit`: one redacted JSON record per tool call, kept 120 days.
 - `hooks.py breaker`: per-conversation circuit breakers on total calls and on the
   same call repeated back to back.
+- Remote Control's once-a-second status redraw on stdout is dropped, so it
+  does not fill the journal; errors still reach stderr.
 - Build workflow: hook tests, Trivy (blocking), SPDX SBOM, Quay and GHCR.
