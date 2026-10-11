@@ -47,7 +47,10 @@ whatever was there.
 - **Base:** UBI 10 Minimal, pinned by digest. Claude Code
   (`CLAUDE_CODE_VERSION`) and gh (`GH_VERSION`) are pinned in the
   Containerfile and bumped by hand, because a new Claude Code is tried before
-  Josui runs on it. `DISABLE_AUTOUPDATER=1`.
+  Josui runs on it. `DISABLE_AUTOUPDATER=1`. Telemetry and error reporting are off
+  (`DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING`); the broader
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is not set, because it also
+  turns off the feature-flag fetch Remote Control refuses to start without.
 - **Trivy:** blocking on CRITICAL and HIGH with `.trivyignore`; SBOM (SPDX)
   per build. cosign signing is not wired yet.
 - **No `schedule:` trigger:** rebuilt on `parent-image-updated`, the fleet's

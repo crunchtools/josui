@@ -20,4 +20,7 @@ All notable changes to this project are documented here. The format follows
   same call repeated back to back.
 - Remote Control's once-a-second status redraw on stdout is dropped, so it
   does not fill the journal; errors still reach stderr.
+- Managed settings turn off telemetry and error reporting only. The broader
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` also disables the feature-flag
+  fetch, and Remote Control will not start without it.
 - Build workflow: hook tests, Trivy (blocking), SPDX SBOM, Quay and GHCR.
