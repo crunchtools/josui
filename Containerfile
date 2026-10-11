@@ -18,10 +18,13 @@ ARG GH_SHA256=bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386
 
 # git, gh and ssh for source work; jq and python3 for the hooks and the
 # skills' own scripts; nodejs because Claude Code installs from npm and the
-# web projects Josui works on run their unit tests with it.
+# web projects Josui works on run their unit tests with it. Full ICU with
+# it: without the locale data, tests that format a date pass in the site's
+# container and fail here.
 RUN microdnf install -y --setopt=install_weak_deps=0 --nodocs \
         findutils grep sed gawk tar gzip which procps-ng \
-        ca-certificates git-core openssh-clients jq python3 nodejs npm && \
+        ca-certificates git-core openssh-clients jq python3 \
+        nodejs nodejs-full-i18n npm && \
     microdnf clean all
 
 # gh from the release tarball, checked against the published checksum. The

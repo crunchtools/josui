@@ -23,4 +23,6 @@ All notable changes to this project are documented here. The format follows
 - Managed settings turn off telemetry and error reporting only. The broader
   `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` also disables the feature-flag
   fetch, and Remote Control will not start without it.
+- `nodejs-full-i18n`, so locale-dependent tests behave here as they do in the
+  containers the code runs in.
 - Build workflow: hook tests, Trivy (blocking), SPDX SBOM, Quay and GHCR.
