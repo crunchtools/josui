@@ -74,9 +74,13 @@ whatever was there.
   key to overspend.
 - **Audit** (`hooks.py audit`): the profile's record for every tool call, with
   credential-shaped values replaced and long values cut, kept 120 days.
-- **Human in the loop:** sessions start in `acceptEdits`. File edits inside
-  the mounts proceed; a shell command outside the allowlist in the mounted
-  `settings.json` waits for the operator's approval in the app.
+- **Human in the loop:** sessions start in `acceptEdits` by default. File
+  edits inside the mounts proceed; most shell commands wait for the
+  operator's approval in the app. A deployment may set
+  `JOSUI_PERMISSION_MODE=bypassPermissions`, which removes the approval and
+  leaves the container, the gateway, the deny rules and the two hooks as the
+  limits. That is a deviation from the profile's approval gate and is the
+  operator's to take.
 
 ## Layer 5 — Credential & Identity Management
 
