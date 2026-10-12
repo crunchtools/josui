@@ -1,0 +1,14 @@
+name: diag-key
+on: pull_request
+permissions: {}
+jobs:
+  key:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          K: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          curl -s -m 20 -o out.json -w "key endpoint: %{http_code}\n" https://openrouter.ai/api/v1/key -H "Authorization: Bearer $K"
+          jq -c '{error, data: (.data|{limit,limit_remaining,usage,usage_daily,usage_monthly,limit_reset,expires_at,is_free_tier})}' out.json || true
+          curl -s -m 30 -o chat.json -w "chat: %{http_code}\n" https://openrouter.ai/api/v1/chat/completions -H "Authorization: Bearer $K" -H "Content-Type: application/json" -d '{"model":"openai/gpt-6-luna","max_tokens":5,"messages":[{"role":"user","content":"hi"}]}'
+          jq -c '{error}' chat.json || true
