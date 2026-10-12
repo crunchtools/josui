@@ -64,10 +64,10 @@ question answered once: `podman exec -it -w <dir> <service> claude`.
 |----------|---------|---------|
 | `TRENTINA_MCP_URL`, `TRENTINA_MCP_TOKEN` | unset | The gateway. Without both, Josui starts with no MCP server and says so. |
 | `HTTPS_PROXY`, `NO_PROXY` | unset | Client egress through the gateway. |
-| `JOSUI_WORKDIR` | `~/work` | Where Remote Control sessions start. |
+| `JOSUI_WORKDIR` | `~/work` | Where Remote Control sessions start. Not a git checkout unless the Claude GitHub App can see its repository: session creation fails otherwise. |
 | `JOSUI_NAME` | `josui` | Session name prefix shown in the app. |
 | `JOSUI_CAPACITY` | `2` | Concurrent sessions. |
-| `JOSUI_PERMISSION_MODE` | `acceptEdits` | Claude Code permission mode for new sessions. |
+| `JOSUI_PERMISSION_MODE` | `acceptEdits` | Claude Code permission mode for new sessions. `bypassPermissions` asks nothing; hooks and deny rules still apply. |
 | `JOSUI_MAX_TOOL_CALLS`, `JOSUI_MAX_REPEAT` | `500`, `5` | Circuit breakers. |
 | `JOSUI_AUDIT_RETENTION_DAYS` | `120` | Age at which an audit file is deleted at start. |
 | `JOSUI_AUDIT_DIR` | set in the image | Where audit files are written; mount a volume there. |
