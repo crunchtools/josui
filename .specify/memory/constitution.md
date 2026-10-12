@@ -84,8 +84,10 @@ whatever was there.
 
 ## Layer 5 — Credential & Identity Management
 
-The gateway token and the egress credential come from the env file passed
-with `--env-file`. The entrypoint unsets the gateway token before starting
+The gateway token comes from the env file passed with `--env-file`. Client
+egress has no credential: the gateway identifies the caller by the network
+the connection arrives from, so the proxy URL carries none and there is
+nothing for the agent to print or leak. The entrypoint unsets the gateway token before starting
 Claude Code, though the agent can still read it from its own state file, as
 any MCP client can.
 
