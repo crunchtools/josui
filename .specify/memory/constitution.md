@@ -1,6 +1,6 @@
 # josui Constitution
 
-> **Version:** 1.0.0
+> **Version:** 1.0.1
 > **Ratified:** 2026-10-11
 > **Status:** Active
 > **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.24.0
@@ -80,7 +80,14 @@ whatever was there.
   `JOSUI_PERMISSION_MODE=bypassPermissions`, which removes the approval and
   leaves the container, the gateway, the deny rules and the two hooks as the
   limits. That is a deviation from the profile's approval gate and is the
-  operator's to take.
+  operator's to take. The app sets its own mode on a session it opens and
+  so undoes the setting there; a deployment that has taken the deviation
+  holds it with a `PreToolUse` hook in its mounted identity that answers
+  `permissionDecision: allow`. That hook is the same deviation and no wider
+  one: it runs only inside this container, a deny from a rule or another
+  hook still wins, and it must leave `AskUserQuestion` and `ExitPlanMode`
+  to the operator and answer in plan mode for read-only research tools
+  alone, so a plan is still approved before anything changes.
 
 ## Layer 5 — Credential & Identity Management
 
@@ -125,3 +132,4 @@ the host's monitoring configuration.
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0.0 | 2026-10-11 | First constitution |
+| 1.0.1 | 2026-10-13 | Human in the loop: the hook that holds the no-prompt deviation when the app sets the mode |
