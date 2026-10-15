@@ -23,9 +23,12 @@ for name in CLAUDE.md settings.json; do
     log "no $name in $config_dir"
   fi
 done
+# Only the image's managed hooks run (allowManagedHooksOnly), so a hook in
+# this home, written by the agent or planted by a checkout, does nothing.
+# Clear the old copies so nobody mistakes them for live ones.
+find "$claude_dir/hooks" -mindepth 1 -delete
 if [ -d "$config_dir/hooks" ]; then
-  find "$claude_dir/hooks" -mindepth 1 -delete
-  cp -r "$config_dir/hooks/." "$claude_dir/hooks/"
+  log "$config_dir/hooks is ignored: only the image's managed hooks run"
 fi
 
 # Skills are a git checkout on a volume. A failed pull is not fatal: the

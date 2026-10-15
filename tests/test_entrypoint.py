@@ -69,7 +69,8 @@ class EntrypointTest(unittest.TestCase):
         claude_dir = self.home / ".claude"
         self.assertEqual((claude_dir / "CLAUDE.md").read_text(), "# Josui\n")
         self.assertFalse((claude_dir / "settings.json").is_symlink())
-        self.assertTrue((claude_dir / "hooks/deny-local-memory.sh").exists())
+        # Identity hooks are not copied: only the image's managed hooks run.
+        self.assertFalse((claude_dir / "hooks/deny-local-memory.sh").exists())
         self.assertEqual(sorted(p.name for p in (claude_dir / "skills").iterdir()), ["alpha", "beta"])
         self.assertEqual((claude_dir / "skills/alpha").resolve(), (self.skills / "skills/alpha").resolve())
         self.assertEqual((claude_dir / "templates").resolve(), (self.skills / "templates").resolve())

@@ -1,9 +1,9 @@
 # josui Constitution
 
-> **Version:** 1.0.2
+> **Version:** 1.1.0
 > **Ratified:** 2026-10-11
 > **Status:** Active
-> **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.24.0
+> **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.26.0
 > **Profile:** Autonomous Agent
 
 Claude Code packaged as a container, run as Josui: the agent its operator
@@ -22,7 +22,10 @@ is bind-mounted into it and nothing else: there is no container socket and no
 shell on the host. On the network, it sits on an internal network with no DNS
 whose only other member is the Trentina gateway. Every MCP tool result is
 judged by the gateway before Josui reads it, and Claude Code's own HTTPS
-leaves through the gateway's client egress, to an allowlist of hosts.
+leaves through the gateway's client egress, to an allowlist of hosts. GitHub
+is not on it: the API is the gateway's GitHub tools and git is its git route,
+which holds the token and limits the repositories and the branches a push may
+move. The container holds no `gh` and no GitHub credential.
 
 ## Layer 1 — Trust Boundary Architecture
 
@@ -45,7 +48,7 @@ whatever was there.
 - **Image:** `quay.io/crunchtools/josui` and `ghcr.io/crunchtools/josui`,
   public. It holds tooling only; identity and credentials are mounted.
 - **Base:** UBI 10 Minimal, pinned by digest. Claude Code
-  (`CLAUDE_CODE_VERSION`) and gh (`GH_VERSION`) are pinned in the
+  (`CLAUDE_CODE_VERSION`) is pinned in the
   Containerfile and bumped by hand, because a new Claude Code is tried before
   Josui runs on it. `DISABLE_AUTOUPDATER=1`. Telemetry and error reporting are off
   (`DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING`); the broader
@@ -82,8 +85,8 @@ whatever was there.
   limits. That is a deviation from the profile's approval gate and is the
   operator's to take. The app sets its own mode on a session it opens and
   so undoes the setting there; a deployment that has taken the deviation
-  holds it with a `PreToolUse` hook in its mounted identity that answers
-  `permissionDecision: allow`. That hook is the same deviation and no wider
+  holds it with the image's `allow-hook.sh`, turned on with
+  `JOSUI_ANSWER_PERMISSIONS=1`, which answers `permissionDecision: allow`. That hook is the same deviation and no wider
   one: it runs only inside this container, a deny from a rule or another
   hook still wins, and it must leave `AskUserQuestion` and `ExitPlanMode`
   to the operator. `ExitPlanMode` is the gate on a plan: the operator still
@@ -91,6 +94,12 @@ whatever was there.
   mode, because a plan-mode session can outlive the approval of its plan.
   Each call the hook leaves to the operator is logged in the audit
   directory.
+- **Managed hooks only:** managed settings set `allowManagedHooksOnly`, so
+  only the image's hooks run. With prompts off, a hook from the home volume
+  (which the agent can write) or from a checkout's `.claude/settings.json`
+  would run unasked; neither does. `WebSearch` and `WebFetch` are denied in
+  managed settings, because they bring web pages back past the gateway's
+  judging.
 
 ## Layer 5 — Credential & Identity Management
 
@@ -104,8 +113,9 @@ any MCP client can.
 One credential cannot be injected: Remote Control refuses long-lived tokens
 (`claude setup-token`, `CLAUDE_CODE_OAUTH_TOKEN`) as inference-only, so the
 Claude login is an interactive `claude auth login` whose refreshable
-credential lives in the state volume, mode 0600. The gh login is kept the
-same way.
+credential lives in the state volume, mode 0600. There is no GitHub
+credential in the container: the gateway injects the token on its git route
+and its GitHub tools, and git sends only the gateway token.
 
 ## Layer 6 — Monitoring, Detection & Response
 
@@ -137,3 +147,4 @@ the host's monitoring configuration.
 | 1.0.0 | 2026-10-11 | First constitution |
 | 1.0.1 | 2026-10-13 | Human in the loop: the hook that holds the no-prompt deviation when the app sets the mode |
 | 1.0.2 | 2026-10-14 | Human in the loop: the allow hook answers in plan mode too; plan approval stays the gate; declined calls are logged |
+| 1.1.0 | 2026-10-14 | GitHub only through the gateway (no gh, no credential); the allow hook and memory guard ship in the image; managed hooks only; web tools denied in managed settings. Inherits v1.26.0 |
