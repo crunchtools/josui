@@ -1,6 +1,6 @@
 # josui Constitution
 
-> **Version:** 1.0.1
+> **Version:** 1.0.2
 > **Ratified:** 2026-10-11
 > **Status:** Active
 > **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.24.0
@@ -86,8 +86,11 @@ whatever was there.
   `permissionDecision: allow`. That hook is the same deviation and no wider
   one: it runs only inside this container, a deny from a rule or another
   hook still wins, and it must leave `AskUserQuestion` and `ExitPlanMode`
-  to the operator and answer in plan mode for read-only research tools
-  alone, so a plan is still approved before anything changes.
+  to the operator. `ExitPlanMode` is the gate on a plan: the operator still
+  approves every plan, and the hook answers for the other tools in every
+  mode, because a plan-mode session can outlive the approval of its plan.
+  Each call the hook leaves to the operator is logged in the audit
+  directory.
 
 ## Layer 5 — Credential & Identity Management
 
@@ -133,3 +136,4 @@ the host's monitoring configuration.
 |---------|------|---------|
 | 1.0.0 | 2026-10-11 | First constitution |
 | 1.0.1 | 2026-10-13 | Human in the loop: the hook that holds the no-prompt deviation when the app sets the mode |
+| 1.0.2 | 2026-10-14 | Human in the loop: the allow hook answers in plan mode too; plan approval stays the gate; declined calls are logged |
