@@ -37,7 +37,7 @@ class ManagedSettingsTest(unittest.TestCase):
         self.assertIs(self.settings["allowManagedHooksOnly"], True)
 
     def test_every_hook_is_shipped_in_the_image(self) -> None:
-        for event in ("PreToolUse", "PostToolUse"):
+        for event in ("PreToolUse", "PostToolUse", "PermissionRequest"):
             for command in self.commands(event):
                 self.assertTrue(command.startswith(LIBEXEC), command)
                 script = command.removeprefix("/").split()[0]
@@ -48,6 +48,11 @@ class ManagedSettingsTest(unittest.TestCase):
         self.assertEqual(pre[LIBEXEC + "allow-hook.sh"], "")
         self.assertIn("Bash", pre[LIBEXEC + "deny-local-memory.sh"].split("|"))
         self.assertIn("Write", pre[LIBEXEC + "deny-local-memory.sh"].split("|"))
+
+    def test_allow_hook_answers_the_prompt_itself(self) -> None:
+        # A PreToolUse allow does not answer a prompt the session's mode
+        # still calls for; PermissionRequest is that prompt.
+        self.assertEqual(self.commands("PermissionRequest")[LIBEXEC + "allow-hook.sh"], "")
 
     def test_web_tools_denied_and_auto_memory_off(self) -> None:
         self.assertEqual(sorted(self.settings["permissions"]["deny"]), ["WebFetch", "WebSearch"])

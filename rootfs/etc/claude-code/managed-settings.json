@@ -63,6 +63,18 @@
           }
         ]
       }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/libexec/josui/allow-hook.sh",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }

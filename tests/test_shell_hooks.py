@@ -39,17 +39,41 @@ class AllowHookTest(unittest.TestCase):
                 self.assertIsNotNone(decision, (mode, tool))
                 self.assertEqual(decision["permissionDecision"], "allow")
 
+    def test_answers_the_permission_request_in_any_mode(self) -> None:
+        for mode in ("plan", "acceptEdits", "default"):
+            for tool in ("Bash", "Write", "mcp__trentina__merge_pull_request"):
+                event = {"hook_event_name": "PermissionRequest", "tool_name": tool, "permission_mode": mode}
+                decision = run("allow-hook.sh", event, JOSUI_ANSWER_PERMISSIONS="1")
+                self.assertIsNotNone(decision, (mode, tool))
+                self.assertEqual(decision["hookEventName"], "PermissionRequest")
+                self.assertEqual(decision["decision"], {"behavior": "allow"})
+
+    def test_permission_request_answered_only_when_turned_on(self) -> None:
+        event = {"hook_event_name": "PermissionRequest", "tool_name": "Write", "permission_mode": "default"}
+        self.assertIsNone(run("allow-hook.sh", event))
+
     def test_questions_and_plan_approval_reach_the_person_and_are_logged(self) -> None:
         with tempfile.TemporaryDirectory() as audit:
-            for tool in ("AskUserQuestion", "ExitPlanMode"):
-                event = {"tool_name": tool, "permission_mode": "plan", "session_id": "s1"}
-                self.assertIsNone(
-                    run("allow-hook.sh", event, JOSUI_ANSWER_PERMISSIONS="1", JOSUI_AUDIT_DIR=audit)
-                )
+            for hook_event in ("PreToolUse", "PermissionRequest"):
+                for tool in ("AskUserQuestion", "ExitPlanMode"):
+                    event = {
+                        "hook_event_name": hook_event,
+                        "tool_name": tool,
+                        "permission_mode": "plan",
+                        "session_id": "s1",
+                    }
+                    self.assertIsNone(
+                        run("allow-hook.sh", event, JOSUI_ANSWER_PERMISSIONS="1", JOSUI_AUDIT_DIR=audit)
+                    )
             lines = (Path(audit) / "allow-hook.jsonl").read_text().splitlines()
             self.assertEqual(
-                [json.loads(line)["left_to_person"] for line in lines],
-                ["AskUserQuestion", "ExitPlanMode"],
+                [(json.loads(line)["event"], json.loads(line)["left_to_person"]) for line in lines],
+                [
+                    ("PreToolUse", "AskUserQuestion"),
+                    ("PreToolUse", "ExitPlanMode"),
+                    ("PermissionRequest", "AskUserQuestion"),
+                    ("PermissionRequest", "ExitPlanMode"),
+                ],
             )
 
 

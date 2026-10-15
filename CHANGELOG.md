@@ -19,6 +19,12 @@ All notable changes to this project are documented here. The format follows
 - The git route is configured before the skills checkout is pulled, so the
   pull at start goes through the gateway.
 
+### Fixed
+
+- File writes no longer prompt the person when `JOSUI_ANSWER_PERMISSIONS=1`.
+  A PreToolUse allow does not answer a prompt the session's mode still calls
+  for, so `allow-hook.sh` now also answers the `PermissionRequest` event.
+
 ### Added
 
 - The image: UBI 10 Minimal with Claude Code, git, jq, python3 and nodejs,
