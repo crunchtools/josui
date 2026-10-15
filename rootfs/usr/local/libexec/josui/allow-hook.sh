@@ -19,8 +19,10 @@
 set -euo pipefail
 event=$(cat)
 [ "${JOSUI_ANSWER_PERMISSIONS:-}" = 1 ] || exit 0
-tool=$(jq -r '.tool_name // empty' <<<"$event")
-hook_event=$(jq -r '.hook_event_name // "PreToolUse"' <<<"$event")
+{
+  read -r tool
+  read -r hook_event
+} < <(jq -r '(.tool_name // ""), (.hook_event_name // "PreToolUse")' <<<"$event")
 case "$tool" in
   AskUserQuestion | ExitPlanMode)
     if [ -n "${JOSUI_AUDIT_DIR:-}" ] && [ -d "$JOSUI_AUDIT_DIR" ]; then
