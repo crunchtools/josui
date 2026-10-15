@@ -6,9 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- No `gh` in the image. GitHub is reached through the gateway: its GitHub
+  tools for the API and its git route for clone and push.
+- Managed settings set `allowManagedHooksOnly`: the mounted identity's hooks,
+  hooks in the home volume and hooks in a checkout's `.claude/settings.json`
+  no longer run. The prompts-off hook (`allow-hook.sh`, opt-in with
+  `JOSUI_ANSWER_PERMISSIONS=1`) and the local memory guard
+  (`deny-local-memory.sh`) ship in the image instead.
+- Managed settings deny `WebSearch` and `WebFetch` and turn off auto memory.
+
 ### Added
 
-- The image: UBI 10 Minimal with Claude Code, git, gh, jq, python3 and nodejs,
+- The image: UBI 10 Minimal with Claude Code, git, jq, python3 and nodejs,
   running as a non-root user on a read-only root filesystem.
 - `josui-entrypoint`: builds the Claude Code home from the mounted identity
   (`CLAUDE.md`, `settings.json`, hooks) and skills checkout, registers the

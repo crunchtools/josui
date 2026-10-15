@@ -23,9 +23,12 @@ for name in CLAUDE.md settings.json; do
     log "no $name in $config_dir"
   fi
 done
+# Only the image's managed hooks run (allowManagedHooksOnly), so a hook in
+# this home, written by the agent or planted by a checkout, does nothing.
+# Clear the old copies so nobody mistakes them for live ones.
+find "$claude_dir/hooks" -mindepth 1 -delete
 if [ -d "$config_dir/hooks" ]; then
-  find "$claude_dir/hooks" -mindepth 1 -delete
-  cp -r "$config_dir/hooks/." "$claude_dir/hooks/"
+  log "$config_dir/hooks is ignored: only the image's managed hooks run"
 fi
 
 # Skills are a git checkout on a volume. A failed pull is not fatal: the
@@ -57,6 +60,31 @@ if [ -n "${TRENTINA_MCP_URL:-}" ] && [ -n "${TRENTINA_MCP_TOKEN:-}" ]; then
   mv "$tmp" "$state"
 else
   log "TRENTINA_MCP_URL / TRENTINA_MCP_TOKEN not set, starting without a gateway"
+fi
+
+# git reaches GitHub through the gateway's git route, which holds the GitHub
+# token. git sends the gateway token, written to a file in the state volume
+# like the state file above, so it is not handed to Claude Code in the
+# environment. The global git config includes that file.
+git_url=${TRENTINA_GIT_URL:-}
+git_url=${git_url%/}
+# It is written into git config syntax, so only a plain URL is accepted.
+if [ -n "$git_url" ] && ! [[ "$git_url" =~ ^https?://[A-Za-z0-9.:-]+(/[A-Za-z0-9._-]+)*$ ]]; then
+  log "TRENTINA_GIT_URL is not a plain http(s) URL, ignoring it"
+  git_url=
+fi
+if [ -n "$git_url" ] && [ -n "${TRENTINA_MCP_TOKEN:-}" ]; then
+  gitconf="$HOME/.config/josui/gateway.gitconfig"
+  mkdir -p "$(dirname "$gitconf")"
+  # printf is a builtin, so the token is never in a process's arguments.
+  (
+    umask 077
+    rm -f "$gitconf"
+    printf '[http "%s/"]\n\textraHeader = Authorization: Bearer %s\n[url "%s/github/"]\n\tinsteadOf = https://github.com/\n' \
+      "$git_url" "$TRENTINA_MCP_TOKEN" "$git_url" > "$gitconf"
+  )
+  git config --global --get-all include.path | grep -qxF "$gitconf" ||
+    git config --global --add include.path "$gitconf"
 fi
 unset TRENTINA_MCP_TOKEN
 

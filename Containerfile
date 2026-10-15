@@ -13,10 +13,9 @@ LABEL maintainer="fatherlinux <scott.mccarty@crunchtools.com>"
 LABEL description="Josui - Claude Code packaged as a crunchtools autonomous agent"
 
 ARG CLAUDE_CODE_VERSION=2.1.296
-ARG GH_VERSION=2.102.0
-ARG GH_SHA256=bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386
 
-# git, gh and ssh for source work; jq and python3 for the hooks and the
+# git and ssh for source work (GitHub is reached through the gateway, so
+# there is no gh); jq and python3 for the hooks and the
 # skills' own scripts; nodejs because Claude Code installs from npm and the
 # web projects Josui works on run their unit tests with it. Full ICU with
 # it: without the locale data, tests that format a date pass in the site's
@@ -26,15 +25,6 @@ RUN microdnf install -y --setopt=install_weak_deps=0 --nodocs \
         ca-certificates git-core openssh-clients jq python3 \
         nodejs nodejs-full-i18n npm && \
     microdnf clean all
-
-# gh from the release tarball, checked against the published checksum. The
-# rpm depends on the full git package; git-core is what Josui needs.
-RUN curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" -o /tmp/gh.tar.gz && \
-    echo "${GH_SHA256}  /tmp/gh.tar.gz" | sha256sum -c - && \
-    tar -xzf /tmp/gh.tar.gz -C /tmp && \
-    install -m 0755 "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh && \
-    rm -rf /tmp/gh.tar.gz "/tmp/gh_${GH_VERSION}_linux_amd64" && \
-    gh --version
 
 # Global, not the native installer: that one installs under $HOME and updates
 # itself in place. The root filesystem is read-only at run time and the
@@ -49,11 +39,14 @@ RUN useradd --uid 1000 --user-group --create-home --home-dir /home/josui --shell
 
 COPY rootfs/ /
 
-RUN chmod 0755 /usr/local/bin/josui-entrypoint /usr/local/libexec/josui/hooks.py && \
+RUN chmod 0755 /usr/local/bin/josui-entrypoint /usr/local/libexec/josui/hooks.py \
+        /usr/local/libexec/josui/allow-hook.sh /usr/local/libexec/josui/deny-local-memory.sh && \
     python3 -m py_compile /usr/local/libexec/josui/hooks.py && \
+    bash -n /usr/local/libexec/josui/allow-hook.sh && \
+    bash -n /usr/local/libexec/josui/deny-local-memory.sh && \
     jq -e . /etc/claude-code/managed-settings.json > /dev/null
 
-# HOME is a volume: the Claude and gh logins, sessions and git identity live
+# HOME is a volume: the Claude login, sessions and git identity live
 # there and survive a restart. Nothing else in the container is writable.
 ENV HOME=/home/josui \
     JOSUI_CONFIG_DIR=/etc/josui \

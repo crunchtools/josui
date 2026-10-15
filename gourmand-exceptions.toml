@@ -24,3 +24,15 @@ check = "EV013-hidden_env_config"
 path = "rootfs/usr/local/libexec/josui/hooks.py"
 justification = "JOSUI_AUDIT_DIR and JOSUI_BREAKER_DIR are not toggles: they are the required locations the hooks write to, set by ENV in the Containerfile, listed in README.md's Environment table and in the module docstring. A hook receives no arguments from Claude Code beyond its command line, so the environment is the only channel, and reading them with no default makes a missing one fail loudly."
 classification = "by_design"
+
+[[exceptions]]
+check = "CH009-random_scripts"
+path = "rootfs/usr/local/libexec/josui/allow-hook.sh"
+justification = "Installed by COPY rootfs/ / as a PreToolUse hook that managed settings run on every tool call (the prompts-off hook, opt-in with JOSUI_ANSWER_PERMISSIONS=1). Documented in README.md and the constitution's human-in-the-loop rule; covered by tests/test_shell_hooks.py."
+classification = "by_design"
+
+[[exceptions]]
+check = "CH009-random_scripts"
+path = "rootfs/usr/local/libexec/josui/deny-local-memory.sh"
+justification = "Installed by COPY rootfs/ / as a PreToolUse hook that managed settings run on writes and shell commands, keeping Claude Code's file-based memory empty. Documented in README.md; covered by tests/test_shell_hooks.py."
+classification = "by_design"

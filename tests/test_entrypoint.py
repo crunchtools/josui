@@ -54,6 +54,7 @@ class EntrypointTest(unittest.TestCase):
             "JOSUI_AUDIT_DIR": str(self.root / "audit"),
             "TRENTINA_MCP_URL": "http://192.0.2.2:8019/gateway/agent1/mcp",
             "TRENTINA_MCP_TOKEN": "s3cret-token",
+            "TRENTINA_GIT_URL": "http://192.0.2.2:8019/git/",
         }
 
     def run_entrypoint(
@@ -69,7 +70,8 @@ class EntrypointTest(unittest.TestCase):
         claude_dir = self.home / ".claude"
         self.assertEqual((claude_dir / "CLAUDE.md").read_text(), "# Josui\n")
         self.assertFalse((claude_dir / "settings.json").is_symlink())
-        self.assertTrue((claude_dir / "hooks/deny-local-memory.sh").exists())
+        # Identity hooks are not copied: only the image's managed hooks run.
+        self.assertFalse((claude_dir / "hooks/deny-local-memory.sh").exists())
         self.assertEqual(sorted(p.name for p in (claude_dir / "skills").iterdir()), ["alpha", "beta"])
         self.assertEqual((claude_dir / "skills/alpha").resolve(), (self.skills / "skills/alpha").resolve())
         self.assertEqual((claude_dir / "templates").resolve(), (self.skills / "templates").resolve())
@@ -98,6 +100,33 @@ class EntrypointTest(unittest.TestCase):
     def test_token_is_not_handed_to_the_agent_process(self) -> None:
         self.run_entrypoint()
         self.assertNotIn("s3cret-token", (self.home / "claude-env").read_text())
+
+    def git(self, *args: str) -> str:
+        env = {"HOME": str(self.home), "PATH": os.environ["PATH"]}
+        return subprocess.run(
+            ["git", "config", *args], env=env, capture_output=True, text=True, check=True
+        ).stdout.strip()
+
+    def test_git_goes_to_the_gateway_route_with_the_gateway_token(self) -> None:
+        self.run_entrypoint()
+        self.run_entrypoint()  # a restart does not add a second include
+        gitconf = self.home / ".config/josui/gateway.gitconfig"
+        self.assertEqual(stat.S_IMODE(gitconf.stat().st_mode), 0o600)
+        self.assertEqual(self.git("--global", "--get-all", "include.path"), str(gitconf))
+        self.assertEqual(
+            self.git("--get", "url.http://192.0.2.2:8019/git/github/.insteadOf"), "https://github.com/"
+        )
+        self.assertEqual(
+            self.git("--get", "http.http://192.0.2.2:8019/git/.extraHeader"),
+            "Authorization: Bearer s3cret-token",
+        )
+
+    def test_git_url_that_is_not_a_plain_url_is_ignored(self) -> None:
+        env = {**self.env, "TRENTINA_GIT_URL": 'http://x"]\n[credential]\n\thelper = !touch /tmp/pwned'}
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("not a plain http(s) URL", result.stderr)
+        self.assertFalse((self.home / ".config/josui/gateway.gitconfig").exists())
 
     def test_starts_without_a_gateway_and_says_so(self) -> None:
         env = {k: v for k, v in self.env.items() if not k.startswith("TRENTINA_")}

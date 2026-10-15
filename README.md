@@ -11,8 +11,8 @@ from claude.ai/code or the phone app. Nothing listens for inbound connections.
 
 | Mount | Container path | What it is |
 |-------|----------------|------------|
-| state | `/home/josui` | Claude and gh logins, sessions, git identity. The only writable home. |
-| identity | `/etc/josui` (read-only) | `CLAUDE.md`, `settings.json`, `hooks/`. Private; kept in the host's config repo. |
+| state | `/home/josui` | Claude login, sessions, git identity. The only writable home. |
+| identity | `/etc/josui` (read-only) | `CLAUDE.md`, `settings.json`. Private; kept in the host's config repo. Hooks here are ignored: only the image's managed hooks run. |
 | skills | `/var/lib/josui/josui-skills` | A git checkout of the skills repo, pulled at start. |
 | audit | `/var/log/josui` | One JSON line per tool call. |
 | workspaces | same path as the host | What this copy may work on. One `-v` line each. |
@@ -30,9 +30,15 @@ The container sits on an internal network with no DNS. Its only peer is the
 
 - MCP: `TRENTINA_MCP_URL` and `TRENTINA_MCP_TOKEN`. The gateway is the only
   MCP server managed settings allow, and claude.ai connectors are off.
-- Claude Code's own HTTPS (inference, Remote Control, login refresh) and
-  git/gh: `HTTPS_PROXY` pointing at the gateway's client egress, which tunnels
-  to an allowlist of hosts and to nothing else.
+- Claude Code's own HTTPS (inference, Remote Control, login refresh):
+  `HTTPS_PROXY` pointing at the gateway's client egress, which tunnels to an
+  allowlist of hosts and to nothing else. No forge host belongs on it.
+- GitHub: the gateway's GitHub tools for the API, and its git route for clone
+  and push. With `TRENTINA_GIT_URL` set, the entrypoint writes a git config
+  in the state volume (mode 0600) that sends `https://github.com/` to the
+  route with the gateway token, and includes it from the global git config.
+  There is no `gh` and no GitHub credential in the container; the gateway
+  holds the token.
 
 ## Controls
 
@@ -41,18 +47,25 @@ The container sits on an internal network with no DNS. Its only peer is the
   (default 5). A tripped conversation stays stopped.
 - **Audit** (`hooks.py audit`, PostToolUse): timestamp, tool, server, redacted
   arguments, result and conversation, in `audit-YYYY-MM-DD.jsonl`, kept 120 days.
-- Both hooks are in `/etc/claude-code/managed-settings.json`, which the
-  mounted `settings.json` cannot override.
+- **Local memory guard** (`deny-local-memory.sh`, PreToolUse): refuses writes into
+  Claude Code's file-based memory; the gateway's memory graph is the only store.
+- **Prompts off** (`allow-hook.sh`, PreToolUse): with `JOSUI_ANSWER_PERMISSIONS=1`
+  it answers every permission question except a question to the person and
+  plan approval, in whatever mode the app picked. A deny from any hook wins.
+- All of these are in `/etc/claude-code/managed-settings.json`, which also sets
+  `allowManagedHooksOnly`: hooks from the mounted `settings.json`, from this
+  home, or from a checkout's `.claude/settings.json` do not run. `WebSearch`
+  and `WebFetch` are denied there too: they would bring web pages back past the
+  gateway's judging.
 
 ## Run it
 
 `deploy/josui.service.example` and `deploy/josui.env.example` show a server
-deployment; the real unit and env file live in the host's private config repo. First start needs two things done by hand, once, because the login
+deployment; the real unit and env file live in the host's private config repo. First start needs one thing done by hand, once, because the login
 is personal and Remote Control refuses long-lived tokens:
 
 ```bash
 podman exec -it <service> claude auth login    # claude.ai account; prints a URL, takes a code
-podman exec -it <service> gh auth login
 ```
 
 Then restart the service. A new working directory also needs its trust
@@ -64,10 +77,12 @@ question answered once: `podman exec -it -w <dir> <service> claude`.
 |----------|---------|---------|
 | `TRENTINA_MCP_URL`, `TRENTINA_MCP_TOKEN` | unset | The gateway. Without both, Josui starts with no MCP server and says so. |
 | `HTTPS_PROXY`, `NO_PROXY` | unset | Client egress through the gateway. |
+| `TRENTINA_GIT_URL` | unset | The gateway's git route (`http://<gateway>:8019/git`). Needs `TRENTINA_MCP_TOKEN`. |
 | `JOSUI_WORKDIR` | `~/work` | Where Remote Control sessions start. Not a git checkout unless the Claude GitHub App can see its repository: session creation fails otherwise. |
 | `JOSUI_NAME` | `josui` | Session name prefix shown in the app. |
 | `JOSUI_CAPACITY` | `2` | Concurrent sessions. |
 | `JOSUI_PERMISSION_MODE` | `acceptEdits` | Claude Code permission mode for new sessions. `bypassPermissions` asks nothing; hooks and deny rules still apply. The app sets its own mode on a session it opens, which overrides this. See the constitution's human-in-the-loop rule for the hook a deployment that takes that deviation uses there. |
+| `JOSUI_ANSWER_PERMISSIONS` | unset | `1` turns on the prompts-off hook (the constitution's deviation). |
 | `JOSUI_MAX_TOOL_CALLS`, `JOSUI_MAX_REPEAT` | `500`, `5` | Circuit breakers. |
 | `JOSUI_AUDIT_RETENTION_DAYS` | `120` | Age at which an audit file is deleted at start. |
 | `JOSUI_AUDIT_DIR` | set in the image | Where audit files are written; mount a volume there. |
