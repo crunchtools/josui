@@ -121,6 +121,13 @@ class EntrypointTest(unittest.TestCase):
             "Authorization: Bearer s3cret-token",
         )
 
+    def test_git_url_that_is_not_a_plain_url_is_ignored(self) -> None:
+        env = {**self.env, "TRENTINA_GIT_URL": 'http://x"]\n[credential]\n\thelper = !touch /tmp/pwned'}
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("not a plain http(s) URL", result.stderr)
+        self.assertFalse((self.home / ".config/josui/gateway.gitconfig").exists())
+
     def test_starts_without_a_gateway_and_says_so(self) -> None:
         env = {k: v for k, v in self.env.items() if not k.startswith("TRENTINA_")}
         result = self.run_entrypoint(env=env)
