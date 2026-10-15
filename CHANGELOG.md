@@ -16,6 +16,8 @@ All notable changes to this project are documented here. The format follows
   `JOSUI_ANSWER_PERMISSIONS=1`) and the local memory guard
   (`deny-local-memory.sh`) ship in the image instead.
 - Managed settings deny `WebSearch` and `WebFetch` and turn off auto memory.
+- The git route is configured before the skills checkout is pulled, so the
+  pull at start goes through the gateway.
 
 ### Added
 
