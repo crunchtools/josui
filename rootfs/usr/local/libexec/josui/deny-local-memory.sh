@@ -47,9 +47,7 @@ case "$tool" in
 
     # A file-creating command with such a path among its arguments, confined to
     # one command (no newline, pipe or separator in between).
-    for verb in tee touch cp mv install rsync ln truncate; do
-      grep -Eq "(^|[^[:alnum:]_])${verb}[^|;&]*[[:space:]]['\"]?${MEM}" <<<"$cmd" && deny "$cmd"
-    done
+    grep -Eq "(^|[^[:alnum:]_])(tee|touch|cp|mv|install|rsync|ln|truncate)[^|;&]*[[:space:]]['\"]?${MEM}" <<<"$cmd" && deny "$cmd"
 
     # In-place edits and raw writes.
     grep -Eq "(^|[^[:alnum:]_])sed[^|;&]*-i[^|;&]*[[:space:]]['\"]?${MEM}" <<<"$cmd" && deny "$cmd"

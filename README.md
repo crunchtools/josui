@@ -34,10 +34,11 @@ The container sits on an internal network with no DNS. Its only peer is the
   `HTTPS_PROXY` pointing at the gateway's client egress, which tunnels to an
   allowlist of hosts and to nothing else. No forge host belongs on it.
 - GitHub: the gateway's GitHub tools for the API, and its git route for clone
-  and push. git is pointed at the route with `GIT_CONFIG_*` in the env file
-  (an `extraHeader` carrying the gateway token) and an `insteadOf` in the
-  state's git config. There is no `gh` and no GitHub credential in the
-  container; the gateway holds the token.
+  and push. With `TRENTINA_GIT_URL` set, the entrypoint writes a git config
+  in the state volume (mode 0600) that sends `https://github.com/` to the
+  route with the gateway token, and includes it from the global git config.
+  There is no `gh` and no GitHub credential in the container; the gateway
+  holds the token.
 
 ## Controls
 
@@ -76,6 +77,7 @@ question answered once: `podman exec -it -w <dir> <service> claude`.
 |----------|---------|---------|
 | `TRENTINA_MCP_URL`, `TRENTINA_MCP_TOKEN` | unset | The gateway. Without both, Josui starts with no MCP server and says so. |
 | `HTTPS_PROXY`, `NO_PROXY` | unset | Client egress through the gateway. |
+| `TRENTINA_GIT_URL` | unset | The gateway's git route (`http://<gateway>:8019/git`). Needs `TRENTINA_MCP_TOKEN`. |
 | `JOSUI_WORKDIR` | `~/work` | Where Remote Control sessions start. Not a git checkout unless the Claude GitHub App can see its repository: session creation fails otherwise. |
 | `JOSUI_NAME` | `josui` | Session name prefix shown in the app. |
 | `JOSUI_CAPACITY` | `2` | Concurrent sessions. |

@@ -115,7 +115,8 @@ One credential cannot be injected: Remote Control refuses long-lived tokens
 Claude login is an interactive `claude auth login` whose refreshable
 credential lives in the state volume, mode 0600. There is no GitHub
 credential in the container: the gateway injects the token on its git route
-and its GitHub tools, and git sends only the gateway token.
+and its GitHub tools. git sends the gateway token, which the entrypoint
+writes to a 0600 git config in the state volume rather than the environment.
 
 ## Layer 6 — Monitoring, Detection & Response
 

@@ -61,6 +61,24 @@ if [ -n "${TRENTINA_MCP_URL:-}" ] && [ -n "${TRENTINA_MCP_TOKEN:-}" ]; then
 else
   log "TRENTINA_MCP_URL / TRENTINA_MCP_TOKEN not set, starting without a gateway"
 fi
+
+# git reaches GitHub through the gateway's git route, which holds the GitHub
+# token. git sends the gateway token, written to a file in the state volume
+# like the state file above, so it is not handed to Claude Code in the
+# environment. The global git config includes that file.
+if [ -n "${TRENTINA_GIT_URL:-}" ] && [ -n "${TRENTINA_MCP_TOKEN:-}" ]; then
+  git_url=${TRENTINA_GIT_URL%/}
+  gitconf="$HOME/.config/josui/gateway.gitconfig"
+  mkdir -p "$(dirname "$gitconf")"
+  (
+    umask 077
+    rm -f "$gitconf"
+    git config --file "$gitconf" "http.$git_url/.extraHeader" "Authorization: Bearer $TRENTINA_MCP_TOKEN"
+    git config --file "$gitconf" "url.$git_url/github/.insteadOf" https://github.com/
+  )
+  git config --global --get-all include.path | grep -qxF "$gitconf" ||
+    git config --global --add include.path "$gitconf"
+fi
 unset TRENTINA_MCP_TOKEN
 
 # Audit records are kept past the profile's 90-day minimum, then dropped.

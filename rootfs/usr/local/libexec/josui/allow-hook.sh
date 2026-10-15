@@ -18,7 +18,8 @@ case "$tool" in
   AskUserQuestion | ExitPlanMode)
     if [ -n "${JOSUI_AUDIT_DIR:-}" ] && [ -d "$JOSUI_AUDIT_DIR" ]; then
       jq -c '{timestamp: (now | todate), hook: "allow", left_to_person: .tool_name, mode: .permission_mode, conversation_id: .session_id}' \
-        <<<"$event" >>"$JOSUI_AUDIT_DIR/allow-hook.jsonl" || true
+        <<<"$event" >>"$JOSUI_AUDIT_DIR/allow-hook.jsonl" ||
+        echo "allow-hook: could not write the audit line" >&2
     fi
     exit 0
     ;;
