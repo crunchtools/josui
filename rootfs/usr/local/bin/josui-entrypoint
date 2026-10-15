@@ -70,11 +70,12 @@ if [ -n "${TRENTINA_GIT_URL:-}" ] && [ -n "${TRENTINA_MCP_TOKEN:-}" ]; then
   git_url=${TRENTINA_GIT_URL%/}
   gitconf="$HOME/.config/josui/gateway.gitconfig"
   mkdir -p "$(dirname "$gitconf")"
+  # printf is a builtin, so the token is never in a process's arguments.
   (
     umask 077
     rm -f "$gitconf"
-    git config --file "$gitconf" "http.$git_url/.extraHeader" "Authorization: Bearer $TRENTINA_MCP_TOKEN"
-    git config --file "$gitconf" "url.$git_url/github/.insteadOf" https://github.com/
+    printf '[http "%s/"]\n\textraHeader = Authorization: Bearer %s\n[url "%s/github/"]\n\tinsteadOf = https://github.com/\n' \
+      "$git_url" "$TRENTINA_MCP_TOKEN" "$git_url" > "$gitconf"
   )
   git config --global --get-all include.path | grep -qxF "$gitconf" ||
     git config --global --add include.path "$gitconf"
