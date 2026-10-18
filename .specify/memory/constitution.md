@@ -31,13 +31,20 @@ move. The container holds no `gh` and no GitHub credential.
 
 Single agent behind the gateway. The gateway is the deterministic enforcer
 and holds the quarantined reader; Josui never fetches from the web itself
-(`WebFetch` and `WebSearch` are denied in its settings). Attended mode: a
-conversation exists only when the operator opens one over Remote Control.
+(`WebFetch` and `WebSearch` are denied in its settings). Attended mode: the
+agent acts only when the operator starts it, either by opening a conversation
+over Remote Control, or, with the Matrix channel on, by texting from the
+operator's phone. That second path is the channel session. It is not on
+Remote Control, and it takes a turn only for a message from a sender in
+`JOSUI_MATRIX_ALLOW`, the operator's own number, which reaches it through
+Trentina's RCS bridge, judged.
 
 ## Layer 2 — MCP Server Governance
 
-`/etc/claude-code/managed-settings.json` allows one MCP server, `trentina`,
-and turns off claude.ai connectors. Which backends and tools that seat holds,
+`/etc/claude-code/managed-settings.json` allows two MCP servers and turns off
+claude.ai connectors: `trentina` by name, and the Matrix channel by its exact
+command (`python3 /usr/local/libexec/josui/matrix-channel.py`), a stdio server
+shipped in the image that talks only to the agent's own homeserver. Which backends and tools that seat holds,
 their scorecards and risk tiers are the gateway's configuration and are not
 restated here. The entrypoint writes that one server into Claude Code's state
 from `TRENTINA_MCP_URL` and `TRENTINA_MCP_TOKEN` at every start, replacing
