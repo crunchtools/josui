@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-18
+
+### Changed
+
+- The channel session is no longer on Remote Control. The operator reaches
+  it by text, and claude.ai shows only the Remote Control server's sessions
+  instead of a second `<JOSUI_NAME>-rcs` one. `channel-session` drops its
+  session-name argument.
+
 ## [0.1.2] - 2026-10-18
 
 ### Fixed

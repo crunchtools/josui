@@ -62,13 +62,13 @@ The container sits on an internal network with no DNS. Its only peer is the
 ## Matrix channel
 
 With `JOSUI_MATRIX_HOMESERVER` set, a second Claude process runs beside the
-Remote Control server: an interactive session named `<JOSUI_NAME>-rcs`, with
-Remote Control on and a [channel](https://code.claude.com/docs/en/channels-reference)
-that carries a Matrix DM into it. On a crunchtools host the homeserver is the
-agent's own, and Trentina's RCS bridge puts the operator's texts there, so a
-text from the phone lands in that session and Claude answers with the
-channel's `reply` tool. The same session is open in the claude.ai app, where
-the operator can watch it and type into it.
+Remote Control server: an interactive session with a
+[channel](https://code.claude.com/docs/en/channels-reference) that carries a
+Matrix DM into it. On a crunchtools host the homeserver is the agent's own,
+and Trentina's RCS bridge puts the operator's texts there, so a text from the
+phone lands in that session and Claude answers with the channel's `reply`
+tool. The session is not on Remote Control: the operator reaches it by text,
+and claude.ai shows only the server's sessions.
 
 - `matrix-channel.py` is the channel, a stdio MCP server using only the
   standard library. It lets through messages, and joins invites, only from the

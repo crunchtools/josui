@@ -1,6 +1,7 @@
 #!/usr/bin/expect -f
-# Run the channel session: an interactive Claude Code session with Remote
-# Control on and the Matrix channel loaded. Claude Code loads a channel only
+# Run the channel session: an interactive Claude Code session with the
+# Matrix channel loaded. It is not on Remote Control: the operator reaches it
+# by text, and claude.ai keeps only the Remote Control server's sessions. Claude Code loads a channel only
 # in an interactive session, and a channel that is not on Anthropic's
 # allowlist only with --dangerously-load-development-channels, whose warning
 # has to be answered at every start. This gives the session its terminal
@@ -8,22 +9,22 @@
 # was asked for. It does not answer the working directory's trust
 # question: the operator does that once, by hand.
 #
-#   channel-session <mcp-config> <session-name> <permission-mode>
+#   channel-session <mcp-config> <permission-mode>
 #
 # The TUI draws the gaps between words as cursor moves, so the patterns are
 # single words. Each dialog is answered once. Exits with Claude's status.
 
-if {[llength $argv] != 3} {
-    puts stderr "usage: channel-session <mcp-config> <session-name> <permission-mode>"
+if {[llength $argv] != 2} {
+    puts stderr "usage: channel-session <mcp-config> <permission-mode>"
     exit 2
 }
-lassign $argv config name mode
+lassign $argv config mode
 
 proc note {message} { puts stderr "channel-session: $message" }
 
 log_user 0
 set stty_init "rows 50 columns 160"
-spawn -noecho claude --mcp-config $config --remote-control $name --permission-mode $mode \
+spawn -noecho claude --mcp-config $config --permission-mode $mode \
     --dangerously-load-development-channels server:matrix
 
 set down "\033\[B"
@@ -33,7 +34,7 @@ expect {
     -re {inject} {
         # "Channels (experimental) messages from server:matrix inject
         # directly in this session": the channel is registered.
-        note "channel registered, session $name is live"
+        note "channel registered"
     }
     -re {development} {
         # Option 1, "I am using this for local development", is the default.

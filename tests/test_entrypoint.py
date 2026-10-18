@@ -173,7 +173,7 @@ class EntrypointTest(unittest.TestCase):
         self.assertEqual((self.home / "claude-args").read_text().split()[0], "remote-control")
         config = self.home / ".config/josui/channel-mcp.json"
         self.assertEqual((self.home / "session-args").read_text().split(),
-                         [str(config), "josui-rcs", "bypassPermissions"])
+                         [str(config), "bypassPermissions"])
         server = json.loads(config.read_text())["mcpServers"]["matrix"]
         self.assertEqual([server["command"], *server["args"]],
                          ["python3", "/usr/local/libexec/josui/matrix-channel.py"])

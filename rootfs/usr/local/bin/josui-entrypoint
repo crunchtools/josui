@@ -146,7 +146,7 @@ fi
 libexec=${JOSUI_LIBEXEC:-/usr/local/libexec/josui}
 claude "${server_args[@]}" > /dev/null &
 server=$!
-env -u DISABLE_TELEMETRY "$libexec/channel-session" "$channel" "${JOSUI_NAME:-josui}-rcs" \
+env -u DISABLE_TELEMETRY "$libexec/channel-session" "$channel" \
   "${JOSUI_PERMISSION_MODE:-acceptEdits}" &
 session=$!
 trap 'kill "$server" "$session" 2>/dev/null' TERM INT

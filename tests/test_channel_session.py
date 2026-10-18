@@ -47,7 +47,7 @@ class ChannelSessionTest(unittest.TestCase):
         env = {**os.environ, "HOME": str(self.home), "PATH": f"{self.home}:{os.environ['PATH']}",
                "DIALOGS": dialogs}
         return subprocess.run(
-            ["expect", "-f", str(SESSION), "/cfg.json", "josui-rcs", mode],
+            ["expect", "-f", str(SESSION), "/cfg.json", mode],
             env=env, capture_output=True, text=True, timeout=60, check=False,
         )
 
@@ -60,7 +60,7 @@ class ChannelSessionTest(unittest.TestCase):
         # Enter on the channels warning, whose default is the one we want;
         # Down then Enter on bypass, whose default is "No, exit".
         self.assertEqual(self.keys(), [r"channels '\n'", r"bypass '\x1b[B\n'"])
-        self.assertIn("session josui-rcs is live", result.stderr)
+        self.assertIn("channel registered", result.stderr)
         self.assertIn("claude exited with status 3", result.stderr)
 
     def test_leaves_the_trust_question_to_the_operator(self) -> None:
@@ -69,12 +69,14 @@ class ChannelSessionTest(unittest.TestCase):
         self.assertIn("not trusted yet", result.stderr)
         self.assertFalse((self.home / "keys").read_text().strip())
 
-    def test_passes_the_channel_and_remote_control_flags(self) -> None:
+    def test_loads_the_channel_without_remote_control(self) -> None:
+        # The operator reaches this session by text; claude.ai shows only the
+        # Remote Control server's sessions.
         self.run_session("channels")
         args = (self.home / "args").read_text().splitlines()
         self.assertEqual(args, [
-            "--mcp-config", "/cfg.json", "--remote-control", "josui-rcs", "--permission-mode",
-            "bypassPermissions", "--dangerously-load-development-channels", "server:matrix",
+            "--mcp-config", "/cfg.json", "--permission-mode", "bypassPermissions",
+            "--dangerously-load-development-channels", "server:matrix",
         ])
 
     def test_terminal_output_stays_out_of_the_log(self) -> None:
