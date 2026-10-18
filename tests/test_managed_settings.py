@@ -69,7 +69,12 @@ class ManagedSettingsTest(unittest.TestCase):
         # Remote Control exits at start when this is set: it disables the
         # feature-flag fetch along with telemetry.
         self.assertNotIn("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", self.settings["env"])
-        self.assertEqual(self.settings["env"]["DISABLE_TELEMETRY"], "1")
+
+    def test_telemetry_is_not_disabled_for_every_session(self) -> None:
+        # With DISABLE_TELEMETRY set, Claude Code skips channels ("channels
+        # feature is not currently available"); the entrypoint sets it for
+        # the Remote Control server only.
+        self.assertNotIn("DISABLE_TELEMETRY", self.settings["env"])
 
 
 if __name__ == "__main__":

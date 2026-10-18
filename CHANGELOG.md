@@ -6,14 +6,23 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-18
+
+### Fixed
+
+- Channel messages reach the session. With `DISABLE_TELEMETRY` set, Claude
+  Code does not load the policy that allows channels, and skips the channel
+  ("channels feature is not currently available"). It is no longer in
+  managed settings; the entrypoint sets it for the Remote Control server
+  only.
+
 ## [0.1.1] - 2026-10-18
 
 ### Fixed
 
 - The Matrix channel answers requests it does not handle with "method not
-  found" instead of an empty result. Claude Code 2.1.296 took the empty
-  result to its `server/discover` probe as the stateless protocol revision
-  and skipped the channel, so messages never reached the session.
+  found" instead of an empty result, as JSON-RPC requires. This entry first
+  said that change made the channel work; it did not, see 0.1.2.
 
 ## [0.1.0] - 2026-10-18
 

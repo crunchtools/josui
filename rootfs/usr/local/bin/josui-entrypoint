@@ -125,6 +125,10 @@ cd "$workdir"
 # Remote Control redraws a terminal status screen on stdout every second.
 # Under a container runtime that is a line a second into the journal, so
 # stdout is dropped; errors still go to stderr.
+# Telemetry is off for the server. It cannot be off in managed settings:
+# with DISABLE_TELEMETRY set, Claude Code does not load the policy that
+# allows channels, and the channel session skips its channel.
+export DISABLE_TELEMETRY=1
 server_args=(
   remote-control
   --spawn same-dir
@@ -142,7 +146,7 @@ fi
 libexec=${JOSUI_LIBEXEC:-/usr/local/libexec/josui}
 claude "${server_args[@]}" > /dev/null &
 server=$!
-"$libexec/channel-session" "$channel" "${JOSUI_NAME:-josui}-rcs" \
+env -u DISABLE_TELEMETRY "$libexec/channel-session" "$channel" "${JOSUI_NAME:-josui}-rcs" \
   "${JOSUI_PERMISSION_MODE:-acceptEdits}" &
 session=$!
 trap 'kill "$server" "$session" 2>/dev/null' TERM INT
