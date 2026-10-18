@@ -1,0 +1,81 @@
+#!/usr/bin/expect -f
+# Run the channel session: an interactive Claude Code session with Remote
+# Control on and the Matrix channel loaded. Claude Code loads a channel only
+# in an interactive session, and a channel that is not on Anthropic's
+# allowlist only with --dangerously-load-development-channels, whose warning
+# has to be answered at every start. This gives the session its terminal
+# and answers that warning, and the bypass permissions one when that mode
+# was asked for. It does not answer the working directory's trust
+# question: the operator does that once, by hand.
+#
+#   channel-session <mcp-config> <session-name> <permission-mode>
+#
+# The TUI draws the gaps between words as cursor moves, so the patterns are
+# single words. Each dialog is answered once. Exits with Claude's status.
+
+if {[llength $argv] != 3} {
+    puts stderr "usage: channel-session <mcp-config> <session-name> <permission-mode>"
+    exit 2
+}
+lassign $argv config name mode
+
+proc note {message} { puts stderr "channel-session: $message" }
+
+log_user 0
+set stty_init "rows 50 columns 160"
+spawn -noecho claude --mcp-config $config --remote-control $name --permission-mode $mode \
+    --dangerously-load-development-channels server:matrix
+
+set down "\033\[B"
+set answered {}
+set timeout 60
+expect {
+    -re {inject} {
+        # "Channels (experimental) messages from server:matrix inject
+        # directly in this session": the channel is registered.
+        note "channel registered, session $name is live"
+    }
+    -re {development} {
+        # Option 1, "I am using this for local development", is the default.
+        if {"channels" ni $answered} {
+            sleep 1
+            send "\r"
+            lappend answered channels
+            note "answered the development channels warning"
+        }
+        exp_continue
+    }
+    -re {folder} {
+        # The trust question is the operator's to answer.
+        note "the working directory is not trusted yet; answer once with: podman exec -it -w <workdir> <service> claude"
+        exit 1
+    }
+    -re {Bypass} {
+        # The bypass permissions warning; its default is "No, exit".
+        if {$mode eq "bypassPermissions" && "bypass" ni $answered} {
+            sleep 1
+            send $down
+            sleep 0.5
+            send "\r"
+            lappend answered bypass
+            note "accepted bypass permissions mode"
+        }
+        exp_continue
+    }
+    timeout {
+        note "no channel after 60s; a dialog this script does not know may be waiting"
+        exp_continue
+    }
+    eof {
+        note "claude exited before the channel was registered"
+        catch wait status
+        exit [expr {[lindex $status 3] ? [lindex $status 3] : 1}]
+    }
+}
+
+set timeout -1
+expect eof
+catch wait status
+set code [lindex $status 3]
+note "claude exited with status $code"
+exit $code

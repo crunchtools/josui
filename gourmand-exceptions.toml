@@ -36,3 +36,15 @@ check = "CH009-random_scripts"
 path = "rootfs/usr/local/libexec/josui/deny-local-memory.sh"
 justification = "Installed by COPY rootfs/ / as a PreToolUse hook that managed settings run on writes and shell commands, keeping Claude Code's file-based memory empty. Documented in README.md; covered by tests/test_shell_hooks.py."
 classification = "by_design"
+
+[[exceptions]]
+check = "CH009-random_scripts"
+path = "rootfs/usr/local/libexec/josui/matrix-channel.py"
+justification = "Installed by COPY rootfs/ / as the Matrix channel, a stdio MCP server that Claude Code starts and that managed settings admit by this exact path. Documented in README.md; covered by tests/test_matrix_channel.py."
+classification = "by_design"
+
+[[exceptions]]
+check = "EV003-test_skip_evasion"
+path = "tests/test_channel_session.py"
+justification = "These tests drive channel-session with expect. CI installs expect before the test step (build.yml), so they always run there; the skip only spares a workstation that lacks it."
+classification = "by_design"

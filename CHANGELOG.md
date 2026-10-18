@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-18
+
 ### Changed
 
 - No `gh` in the image. GitHub is reached through the gateway: its GitHub
@@ -27,12 +29,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Matrix channel (RT #1531). With `JOSUI_MATRIX_HOMESERVER` set, an
+  interactive Remote Control session, `<JOSUI_NAME>-rcs`, runs beside the
+  server with `matrix-channel.py` loaded as a Claude Code channel. Messages
+  from the senders in `JOSUI_MATRIX_ALLOW` arrive in it, and Claude answers
+  with the channel's `reply` tool. `channel-session` (expect) gives the
+  session its terminal and answers the development channels warning at start.
+- `expect` in the image.
 - The image: UBI 10 Minimal with Claude Code, git, jq, python3 and nodejs,
   running as a non-root user on a read-only root filesystem.
 - `josui-entrypoint`: builds the Claude Code home from the mounted identity
   (`CLAUDE.md`, `settings.json`, hooks) and skills checkout, registers the
   Trentina gateway as the one MCP server, and serves Remote Control.
-- Managed settings: the gateway is the only MCP server allowed, claude.ai
+- Managed settings: the gateway is the only MCP server allowed besides the
+  Matrix channel, which is admitted by its exact command; claude.ai
   connectors are off, and two hooks run on every tool call.
 - `hooks.py audit`: one redacted JSON record per tool call, kept 120 days.
 - `hooks.py breaker`: per-conversation circuit breakers on total calls and on the

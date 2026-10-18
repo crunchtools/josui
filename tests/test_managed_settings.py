@@ -23,8 +23,15 @@ class ManagedSettingsTest(unittest.TestCase):
             for hook in entry["hooks"]
         }
 
-    def test_the_gateway_is_the_only_mcp_server(self) -> None:
-        self.assertEqual(self.settings["allowedMcpServers"], [{"serverName": "trentina"}])
+    def test_the_gateway_and_the_channel_are_the_only_mcp_servers(self) -> None:
+        # With a serverCommand entry present, a stdio server must match a
+        # command exactly; the gateway, an http server, is still matched by
+        # name.
+        self.assertEqual(self.settings["allowedMcpServers"], [
+            {"serverName": "trentina"},
+            {"serverCommand": ["python3", LIBEXEC + "matrix-channel.py"]},
+        ])
+        self.assertTrue((ROOT / "rootfs" / LIBEXEC.lstrip("/") / "matrix-channel.py").is_file())
         self.assertTrue(self.settings["disableClaudeAiConnectors"])
 
     def test_breaker_and_audit_run_on_every_tool_call(self) -> None:

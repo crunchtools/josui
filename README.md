@@ -29,7 +29,8 @@ The container sits on an internal network with no DNS. Its only peer is the
 [Trentina](https://github.com/crunchtools/trentina) gateway, by address:
 
 - MCP: `TRENTINA_MCP_URL` and `TRENTINA_MCP_TOKEN`. The gateway is the only
-  MCP server managed settings allow, and claude.ai connectors are off.
+  remote MCP server managed settings allow (the local one is the
+  [Matrix channel](#matrix-channel)), and claude.ai connectors are off.
 - Claude Code's own HTTPS (inference, Remote Control, login refresh):
   `HTTPS_PROXY` pointing at the gateway's client egress, which tunnels to an
   allowlist of hosts and to nothing else. No forge host belongs on it.
@@ -58,6 +59,32 @@ The container sits on an internal network with no DNS. Its only peer is the
   and `WebFetch` are denied there too: they would bring web pages back past the
   gateway's judging.
 
+## Matrix channel
+
+With `JOSUI_MATRIX_HOMESERVER` set, a second Claude process runs beside the
+Remote Control server: an interactive session named `<JOSUI_NAME>-rcs`, with
+Remote Control on and a [channel](https://code.claude.com/docs/en/channels-reference)
+that carries a Matrix DM into it. On a crunchtools host the homeserver is the
+agent's own, and Trentina's RCS bridge puts the operator's texts there, so a
+text from the phone lands in that session and Claude answers with the
+channel's `reply` tool. The same session is open in the claude.ai app, where
+the operator can watch it and type into it.
+
+- `matrix-channel.py` is the channel, a stdio MCP server using only the
+  standard library. It lets through messages, and joins invites, only from the
+  senders in `JOSUI_MATRIX_ALLOW`, checked on the sender, never on the room.
+  It replies only into rooms those senders wrote from.
+- `channel-session` (expect) gives the session the terminal Claude Code needs
+  for a channel, and answers the warning that
+  `--dangerously-load-development-channels` shows at every start. A custom
+  channel is not on Anthropic's allowlist, so it loads only with that flag.
+  It logs to stderr each dialog it answers, and says so if one it does not
+  know is still waiting after 60 seconds. It never answers the working
+  directory's trust question: if that is still open, it exits and names the
+  one-time command (see [Run it](#run-it)).
+- Managed settings admit the channel by its exact command. When either Claude
+  process ends, the container ends and the unit restarts both.
+
 ## Run it
 
 `deploy/josui.service.example` and `deploy/josui.env.example` show a server
@@ -83,6 +110,9 @@ question answered once: `podman exec -it -w <dir> <service> claude`.
 | `JOSUI_CAPACITY` | `2` | Concurrent sessions. |
 | `JOSUI_PERMISSION_MODE` | `acceptEdits` | Claude Code permission mode for new sessions. `bypassPermissions` asks nothing; hooks and deny rules still apply. The app sets its own mode on a session it opens, which overrides this. See the constitution's human-in-the-loop rule for the hook a deployment that takes that deviation uses there. |
 | `JOSUI_ANSWER_PERMISSIONS` | unset | `1` turns on the prompts-off hook (the constitution's deviation). |
+| `JOSUI_MATRIX_HOMESERVER` | unset | The agent's homeserver (`http://<address>:6167`). Set, it turns on the Matrix channel. |
+| `JOSUI_MATRIX_TOKEN_FILE` | `/etc/josui-matrix/token` | The agent account's access token, in a read-only mount. |
+| `JOSUI_MATRIX_ALLOW` | unset | Comma list of the exact Matrix IDs whose messages reach the session. Empty lets nothing through. |
 | `JOSUI_MAX_TOOL_CALLS`, `JOSUI_MAX_REPEAT` | `500`, `5` | Circuit breakers. |
 | `JOSUI_AUDIT_RETENTION_DAYS` | `120` | Age at which an audit file is deleted at start. |
 | `JOSUI_AUDIT_DIR` | set in the image | Where audit files are written; mount a volume there. |

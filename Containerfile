@@ -16,13 +16,14 @@ ARG CLAUDE_CODE_VERSION=2.1.296
 
 # git and ssh for source work (GitHub is reached through the gateway, so
 # there is no gh); jq and python3 for the hooks and the
-# skills' own scripts; nodejs because Claude Code installs from npm and the
+# skills' own scripts; expect to give the Matrix channel session its
+# terminal; nodejs because Claude Code installs from npm and the
 # web projects Josui works on run their unit tests with it. Full ICU with
 # it: without the locale data, tests that format a date pass in the site's
 # container and fail here.
 RUN microdnf install -y --setopt=install_weak_deps=0 --nodocs \
         findutils grep sed gawk tar gzip which procps-ng \
-        ca-certificates git-core openssh-clients jq python3 \
+        ca-certificates git-core openssh-clients jq python3 expect \
         nodejs nodejs-full-i18n npm && \
     microdnf clean all
 
@@ -40,8 +41,10 @@ RUN useradd --uid 1000 --user-group --create-home --home-dir /home/josui --shell
 COPY rootfs/ /
 
 RUN chmod 0755 /usr/local/bin/josui-entrypoint /usr/local/libexec/josui/hooks.py \
-        /usr/local/libexec/josui/allow-hook.sh /usr/local/libexec/josui/deny-local-memory.sh && \
-    python3 -m py_compile /usr/local/libexec/josui/hooks.py && \
+        /usr/local/libexec/josui/allow-hook.sh /usr/local/libexec/josui/deny-local-memory.sh \
+        /usr/local/libexec/josui/matrix-channel.py /usr/local/libexec/josui/channel-session && \
+    python3 -m py_compile /usr/local/libexec/josui/hooks.py /usr/local/libexec/josui/matrix-channel.py && \
+    expect -c 'exit [expr {![info complete [read [open /usr/local/libexec/josui/channel-session]]]}]' && \
     bash -n /usr/local/libexec/josui/allow-hook.sh && \
     bash -n /usr/local/libexec/josui/deny-local-memory.sh && \
     jq -e . /etc/claude-code/managed-settings.json > /dev/null
