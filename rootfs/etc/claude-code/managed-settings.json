@@ -2,6 +2,9 @@
   "allowedMcpServers": [
     {
       "serverName": "trentina"
+    },
+    {
+      "serverCommand": ["python3", "/usr/local/libexec/josui/matrix-channel.py"]
     }
   ],
   "disableClaudeAiConnectors": true,

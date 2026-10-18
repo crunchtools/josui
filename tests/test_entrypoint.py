@@ -146,6 +146,49 @@ class EntrypointTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((self.home / "claude-args").read_text().split(), ["auth", "login"])
 
+    def channel_env(self) -> dict[str, str]:
+        libexec = self.root / "libexec"
+        libexec.mkdir()
+        session = libexec / "channel-session"
+        session.write_text('#!/bin/bash\nprintf "%s\\n" "$@" > "$HOME/session-args"\nexit 7\n')
+        session.chmod(0o755)
+        claude = self.root / "bin/claude"
+        claude.write_text('#!/bin/bash\nprintf "%s\\n" "$@" > "$HOME/claude-args"\nexec sleep 30\n')
+        return {
+            **self.env,
+            "JOSUI_LIBEXEC": str(libexec),
+            "JOSUI_MATRIX_HOMESERVER": "http://192.0.2.3:6167",
+            "JOSUI_MATRIX_TOKEN_FILE": "/etc/josui-matrix/token",
+            "JOSUI_MATRIX_ALLOW": "@rcs_owner:josui.local",
+            "JOSUI_PERMISSION_MODE": "bypassPermissions",
+        }
+
+    def test_channel_runs_beside_remote_control_and_either_ending_stops_both(self) -> None:
+        result = self.run_entrypoint(env=self.channel_env())
+        # The stand-in session exits 7 at once; the server is stopped too.
+        self.assertEqual(result.returncode, 7, result.stderr)
+        self.assertIn("a claude process ended (status 7)", result.stderr)
+        self.assertEqual((self.home / "claude-args").read_text().split()[0], "remote-control")
+        config = self.home / ".config/josui/channel-mcp.json"
+        self.assertEqual((self.home / "session-args").read_text().split(),
+                         [str(config), "josui-rcs", "bypassPermissions"])
+        server = json.loads(config.read_text())["mcpServers"]["matrix"]
+        self.assertEqual([server["command"], *server["args"]],
+                         ["python3", "/usr/local/libexec/josui/matrix-channel.py"])
+        self.assertEqual(server["env"]["JOSUI_MATRIX_ALLOW"], "@rcs_owner:josui.local")
+        self.assertEqual(server["env"]["JOSUI_MATRIX_TOKEN_FILE"], "/etc/josui-matrix/token")
+
+    def test_channel_session_meets_no_onboarding_or_trust_question(self) -> None:
+        self.run_entrypoint(env=self.channel_env())
+        state = json.loads((self.home / ".claude.json").read_text())
+        self.assertTrue(state["hasCompletedOnboarding"])
+        self.assertTrue(state["projects"][str(self.home / "work")]["hasTrustDialogAccepted"])
+        self.assertIn("trentina", state["mcpServers"])
+
+    def test_without_a_homeserver_there_is_no_channel(self) -> None:
+        self.run_entrypoint()
+        self.assertFalse((self.home / ".config/josui/channel-mcp.json").exists())
+
     def test_old_audit_files_are_dropped(self) -> None:
         audit = self.root / "audit"
         audit.mkdir()

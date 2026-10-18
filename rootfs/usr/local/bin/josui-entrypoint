@@ -88,6 +88,32 @@ fi
 
 unset TRENTINA_MCP_TOKEN
 
+# The Matrix channel, when a homeserver is configured. Its MCP config names
+# the server by the exact command the managed allowlist admits. The channel
+# session is interactive, so onboarding and the working directory's trust
+# question are recorded as answered here rather than typed at by expect.
+channel=
+if [ -n "${JOSUI_MATRIX_HOMESERVER:-}" ]; then
+  channel_config="$HOME/.config/josui/channel-mcp.json"
+  mkdir -p "$(dirname "$channel_config")"
+  jq -n --arg hs "$JOSUI_MATRIX_HOMESERVER" \
+    --arg token_file "${JOSUI_MATRIX_TOKEN_FILE:-/etc/josui-matrix/token}" \
+    --arg allow "${JOSUI_MATRIX_ALLOW:-}" \
+    '{mcpServers: {matrix: {type: "stdio", command: "python3",
+      args: ["/usr/local/libexec/josui/matrix-channel.py"],
+      env: {JOSUI_MATRIX_HOMESERVER: $hs, JOSUI_MATRIX_TOKEN_FILE: $token_file,
+            JOSUI_MATRIX_ALLOW: $allow}}}}' > "$channel_config"
+  state="$HOME/.claude.json"
+  [ -s "$state" ] || echo '{}' > "$state"
+  tmp=$(mktemp "$HOME/.claude.json.XXXXXX")
+  jq --arg dir "$workdir" \
+    '.hasCompletedOnboarding = true | .projects[$dir].hasTrustDialogAccepted = true' \
+    "$state" > "$tmp"
+  chmod 0600 "$tmp"
+  mv "$tmp" "$state"
+  channel=$channel_config
+fi
+
 # Audit records are kept past the profile's 90-day minimum, then dropped.
 if [ -d "$audit_dir" ]; then
   find "$audit_dir" -name 'audit-*.jsonl' -mtime "+${JOSUI_AUDIT_RETENTION_DAYS:-120}" -delete || true
@@ -101,9 +127,30 @@ cd "$workdir"
 # Remote Control redraws a terminal status screen on stdout every second.
 # Under a container runtime that is a line a second into the journal, so
 # stdout is dropped; errors still go to stderr.
-exec claude remote-control \
-  --spawn same-dir \
-  --capacity "${JOSUI_CAPACITY:-2}" \
-  --permission-mode "${JOSUI_PERMISSION_MODE:-acceptEdits}" \
-  --remote-control-session-name-prefix "${JOSUI_NAME:-josui}" \
-  > /dev/null
+server_args=(
+  remote-control
+  --spawn same-dir
+  --capacity "${JOSUI_CAPACITY:-2}"
+  --permission-mode "${JOSUI_PERMISSION_MODE:-acceptEdits}"
+  --remote-control-session-name-prefix "${JOSUI_NAME:-josui}"
+)
+if [ -z "$channel" ]; then
+  exec claude "${server_args[@]}" > /dev/null
+fi
+
+# With the channel, the Remote Control server and the channel session run
+# side by side. When either ends the container ends, and the unit restarts
+# both.
+libexec=${JOSUI_LIBEXEC:-/usr/local/libexec/josui}
+claude "${server_args[@]}" > /dev/null &
+server=$!
+"$libexec/channel-session" "$channel" "${JOSUI_NAME:-josui}-rcs" \
+  "${JOSUI_PERMISSION_MODE:-acceptEdits}" &
+session=$!
+trap 'kill "$server" "$session" 2>/dev/null' TERM INT
+status=0
+wait -n "$server" "$session" || status=$?
+log "a claude process ended (status $status), stopping"
+kill "$server" "$session" 2>/dev/null || true
+wait || true
+exit "$status"
