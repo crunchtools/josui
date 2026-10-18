@@ -4,7 +4,9 @@
 # in an interactive session, and a channel that is not on Anthropic's
 # allowlist only with --dangerously-load-development-channels, whose warning
 # has to be answered at every start. This gives the session its terminal
-# and answers that warning, plus the two dialogs a fresh home can show.
+# and answers that warning, and the bypass permissions one when that mode
+# was asked for. It does not answer the working directory's trust
+# question: the operator does that once, by hand.
 #
 #   channel-session <mcp-config> <session-name> <permission-mode>
 #
@@ -44,16 +46,9 @@ expect {
         exp_continue
     }
     -re {folder} {
-        # The trust question; its default is "No, exit".
-        if {"trust" ni $answered} {
-            sleep 1
-            send $down
-            sleep 0.5
-            send "\r"
-            lappend answered trust
-            note "trusted the working directory"
-        }
-        exp_continue
+        # The trust question is the operator's to answer.
+        note "the working directory is not trusted yet; answer once with: podman exec -it -w <workdir> <service> claude"
+        exit 1
     }
     -re {Bypass} {
         # The bypass permissions warning; its default is "No, exit".

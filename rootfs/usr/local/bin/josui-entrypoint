@@ -90,8 +90,8 @@ unset TRENTINA_MCP_TOKEN
 
 # The Matrix channel, when a homeserver is configured. Its MCP config names
 # the server by the exact command the managed allowlist admits. The channel
-# session is interactive, so onboarding and the working directory's trust
-# question are recorded as answered here rather than typed at by expect.
+# session is interactive, so onboarding is recorded as done; the working
+# directory's trust question is left to the operator (see README).
 channel=
 if [ -n "${JOSUI_MATRIX_HOMESERVER:-}" ]; then
   channel_config="$HOME/.config/josui/channel-mcp.json"
@@ -106,9 +106,7 @@ if [ -n "${JOSUI_MATRIX_HOMESERVER:-}" ]; then
   state="$HOME/.claude.json"
   [ -s "$state" ] || echo '{}' > "$state"
   tmp=$(mktemp "$HOME/.claude.json.XXXXXX")
-  jq --arg dir "$workdir" \
-    '.hasCompletedOnboarding = true | .projects[$dir].hasTrustDialogAccepted = true' \
-    "$state" > "$tmp"
+  jq '.hasCompletedOnboarding = true' "$state" > "$tmp"
   chmod 0600 "$tmp"
   mv "$tmp" "$state"
   channel=$channel_config

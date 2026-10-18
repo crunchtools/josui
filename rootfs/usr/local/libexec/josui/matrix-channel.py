@@ -30,6 +30,7 @@ from pathlib import Path
 
 NAME = "matrix"
 SYNC_TIMEOUT_MS = 30000
+REQUEST_TIMEOUT_SECONDS = 30
 RETRY_SECONDS = 5
 INSTRUCTIONS = (
     "Messages from the operator arrive as <channel source=\"matrix\" room_id=... sender=...>. "
@@ -63,11 +64,13 @@ class Homeserver:
         self.base = base.rstrip("/")
         self.token = token
 
-    def call(self, method: str, path: str, body: dict | None = None, timeout: float = 30) -> dict:
-        data = None if body is None else json.dumps(body).encode()
-        request = urllib.request.Request(self.base + path, data=data, method=method)
+    def call(
+        self, method: str, path: str, body: dict | None = None, timeout: float = REQUEST_TIMEOUT_SECONDS
+    ) -> dict:
+        payload = None if body is None else json.dumps(body).encode()
+        request = urllib.request.Request(self.base + path, data=payload, method=method)
         request.add_header("Authorization", f"Bearer {self.token}")
-        if data is not None:
+        if payload is not None:
             request.add_header("Content-Type", "application/json")
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return json.loads(response.read() or b"{}")
@@ -80,7 +83,7 @@ class Homeserver:
         if since:
             query["since"] = since
         path = "/_matrix/client/v3/sync?" + urllib.parse.urlencode(query)
-        return self.call("GET", path, timeout=SYNC_TIMEOUT_MS / 1000 + 30)
+        return self.call("GET", path, timeout=SYNC_TIMEOUT_MS / 1000 + REQUEST_TIMEOUT_SECONDS)
 
     def join(self, room_id: str) -> None:
         self.call("POST", f"/_matrix/client/v3/join/{urllib.parse.quote(room_id, safe='')}", {})
@@ -112,22 +115,23 @@ class Channel:
         self.send({"jsonrpc": "2.0", "id": request_id, "result": result})
 
     def handle(self, message: dict) -> None:
-        method, request_id = message.get("method"), message.get("id")
-        if method == "initialize":
-            self.result(request_id, {
-                "protocolVersion": message["params"]["protocolVersion"],
-                "capabilities": {"tools": {}, "experimental": {"claude/channel": {}}},
-                "serverInfo": {"name": NAME, "version": "1.0.0"},
-                "instructions": INSTRUCTIONS,
-            })
-        elif method == "notifications/initialized":
-            self.start()
-        elif method == "tools/list":
-            self.result(request_id, {"tools": [REPLY_TOOL]})
-        elif method == "tools/call":
-            self.result(request_id, self.call_tool(message["params"]))
-        elif request_id is not None:
-            self.result(request_id, {})
+        request_id = message.get("id")
+        match message.get("method"):
+            case "initialize":
+                self.result(request_id, {
+                    "protocolVersion": message["params"]["protocolVersion"],
+                    "capabilities": {"tools": {}, "experimental": {"claude/channel": {}}},
+                    "serverInfo": {"name": NAME, "version": "1.0.0"},
+                    "instructions": INSTRUCTIONS,
+                })
+            case "notifications/initialized":
+                self.start()
+            case "tools/list":
+                self.result(request_id, {"tools": [REPLY_TOOL]})
+            case "tools/call":
+                self.result(request_id, self.call_tool(message["params"]))
+            case _ if request_id is not None:
+                self.result(request_id, {})
 
     def call_tool(self, params: dict) -> dict:
         args = params.get("arguments") or {}
@@ -224,9 +228,9 @@ class Channel:
     def save_since(self, since: str | None) -> None:
         if since:
             self.state.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self.state.with_suffix(".tmp")
-            tmp.write_text(since)
-            tmp.replace(self.state)
+            staged = self.state.with_suffix(".tmp")
+            staged.write_text(since)
+            staged.replace(self.state)
 
 
 def error_result(text: str) -> dict:

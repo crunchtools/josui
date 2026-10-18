@@ -55,13 +55,19 @@ class ChannelSessionTest(unittest.TestCase):
         return (self.home / "keys").read_text().splitlines()
 
     def test_answers_each_dialog_and_exits_with_claudes_status(self) -> None:
-        result = self.run_session("trust channels bypass")
+        result = self.run_session("channels bypass")
         self.assertEqual(result.returncode, 3, result.stderr)
-        # Down then Enter where the default is "No, exit"; Enter alone on
-        # the channels warning, whose default is the one we want.
-        self.assertEqual(self.keys(), [r"trust '\x1b[B\n'", r"channels '\n'", r"bypass '\x1b[B\n'"])
+        # Enter on the channels warning, whose default is the one we want;
+        # Down then Enter on bypass, whose default is "No, exit".
+        self.assertEqual(self.keys(), [r"channels '\n'", r"bypass '\x1b[B\n'"])
         self.assertIn("session josui-rcs is live", result.stderr)
         self.assertIn("claude exited with status 3", result.stderr)
+
+    def test_leaves_the_trust_question_to_the_operator(self) -> None:
+        result = self.run_session("trust channels")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("not trusted yet", result.stderr)
+        self.assertFalse((self.home / "keys").read_text().strip())
 
     def test_passes_the_channel_and_remote_control_flags(self) -> None:
         self.run_session("channels")

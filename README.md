@@ -79,7 +79,9 @@ the operator can watch it and type into it.
   `--dangerously-load-development-channels` shows at every start. A custom
   channel is not on Anthropic's allowlist, so it loads only with that flag.
   It logs to stderr each dialog it answers, and says so if one it does not
-  know is still waiting after 60 seconds.
+  know is still waiting after 60 seconds. It never answers the working
+  directory's trust question: if that is still open, it exits and names the
+  one-time command (see [Run it](#run-it)).
 - Managed settings admit the channel by its exact command. When either Claude
   process ends, the container ends and the unit restarts both.
 

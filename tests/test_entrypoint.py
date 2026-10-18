@@ -178,11 +178,12 @@ class EntrypointTest(unittest.TestCase):
         self.assertEqual(server["env"]["JOSUI_MATRIX_ALLOW"], "@rcs_owner:josui.local")
         self.assertEqual(server["env"]["JOSUI_MATRIX_TOKEN_FILE"], "/etc/josui-matrix/token")
 
-    def test_channel_session_meets_no_onboarding_or_trust_question(self) -> None:
+    def test_channel_session_skips_onboarding_but_not_trust(self) -> None:
         self.run_entrypoint(env=self.channel_env())
         state = json.loads((self.home / ".claude.json").read_text())
         self.assertTrue(state["hasCompletedOnboarding"])
-        self.assertTrue(state["projects"][str(self.home / "work")]["hasTrustDialogAccepted"])
+        # Trusting the working directory stays the operator's call.
+        self.assertNotIn("projects", state)
         self.assertIn("trentina", state["mcpServers"])
 
     def test_without_a_homeserver_there_is_no_channel(self) -> None:
