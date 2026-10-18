@@ -150,10 +150,12 @@ class EntrypointTest(unittest.TestCase):
         libexec = self.root / "libexec"
         libexec.mkdir()
         session = libexec / "channel-session"
-        session.write_text('#!/bin/bash\nprintf "%s\\n" "$@" > "$HOME/session-args"\nexit 7\n')
+        session.write_text('#!/bin/bash\nprintf "%s\\n" "$@" > "$HOME/session-args"\n'
+                           'env > "$HOME/session-env"\nexit 7\n')
         session.chmod(0o755)
         claude = self.root / "bin/claude"
-        claude.write_text('#!/bin/bash\nprintf "%s\\n" "$@" > "$HOME/claude-args"\nexec sleep 30\n')
+        claude.write_text('#!/bin/bash\nprintf "%s\\n" "$@" > "$HOME/claude-args"\n'
+                          'env > "$HOME/claude-env"\nexec sleep 30\n')
         return {
             **self.env,
             "JOSUI_LIBEXEC": str(libexec),
@@ -185,6 +187,11 @@ class EntrypointTest(unittest.TestCase):
         # Trusting the working directory stays the operator's call.
         self.assertNotIn("projects", state)
         self.assertIn("trentina", state["mcpServers"])
+
+    def test_telemetry_is_off_for_the_server_but_not_the_channel(self) -> None:
+        self.run_entrypoint(env=self.channel_env())
+        self.assertIn("DISABLE_TELEMETRY=1", (self.home / "claude-env").read_text().splitlines())
+        self.assertNotIn("DISABLE_TELEMETRY", (self.home / "session-env").read_text())
 
     def test_without_a_homeserver_there_is_no_channel(self) -> None:
         self.run_entrypoint()
