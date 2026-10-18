@@ -157,6 +157,14 @@ class MatrixChannelTest(unittest.TestCase):
         tools = self.request("tools/list", {})["result"]["tools"]
         self.assertEqual([t["name"] for t in tools], ["reply"])
 
+    def test_unknown_requests_get_method_not_found(self) -> None:
+        # A result for server/discover would put the connection on the
+        # stateless revision, where channel notifications have no path.
+        self.start()
+        answer = self.request("server/discover", {})
+        self.assertEqual(answer["error"]["code"], -32601)
+        self.assertNotIn("result", answer)
+
     def test_owner_message_becomes_a_channel_event(self) -> None:
         self.start()
         self.hs.batches.put(message(OWNER, "status?"))

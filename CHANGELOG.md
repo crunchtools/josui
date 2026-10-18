@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-18
+
+### Fixed
+
+- The Matrix channel answers requests it does not handle with "method not
+  found" instead of an empty result. Claude Code 2.1.296 took the empty
+  result to its `server/discover` probe as the stateless protocol revision
+  and skipped the channel, so messages never reached the session.
+
 ## [0.1.0] - 2026-10-18
 
 ### Changed
