@@ -31,6 +31,7 @@ from pathlib import Path
 NAME = "matrix"
 SYNC_TIMEOUT_MS = 30000
 REQUEST_TIMEOUT_SECONDS = 30
+METHOD_NOT_FOUND = -32601
 RETRY_SECONDS = 5
 INSTRUCTIONS = (
     "Messages from the operator arrive as <channel source=\"matrix\" room_id=... sender=...>. "
@@ -131,7 +132,12 @@ class Channel:
             case "tools/call":
                 self.result(request_id, self.call_tool(message["params"]))
             case _ if request_id is not None:
-                self.result(request_id, {})
+                # Method not found, never an empty success: Claude Code probes
+                # with server/discover first, and a result there negotiates the
+                # stateless protocol revision, which has no path for channel
+                # notifications, so the session would silently skip the channel.
+                self.send({"jsonrpc": "2.0", "id": request_id,
+                           "error": {"code": METHOD_NOT_FOUND, "message": f"no method {message.get('method')}"}})
 
     def call_tool(self, params: dict) -> dict:
         args = params.get("arguments") or {}
