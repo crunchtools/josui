@@ -20,6 +20,8 @@ ME = "@josui:josui.local"
 OWNER = "@rcs_owner:josui.local"
 STRANGER = "@rcs_stranger:josui.local"
 ROOM = "!dm:josui.local"
+SESSION = "c3493af3-ddf3-4ac7-873f-a49a84092637"
+OTHER = "86ed0fdf-e2ea-5330-8cab-8958a516884e"
 
 
 def message(sender: str, body: str, room: str = ROOM) -> dict:
@@ -96,8 +98,10 @@ class MatrixChannelTest(unittest.TestCase):
         self.addCleanup(self.hs.close)
         self.next_id = 0
         self.fifo = self.root / "control"
-        self.transcripts = self.root / "projects"
-        (self.transcripts / "-home-josui-work").mkdir(parents=True)
+        self.claude_dir = self.root / "claude"
+        (self.claude_dir / "projects/-home-josui-work").mkdir(parents=True)
+        (self.claude_dir / "sessions").mkdir()
+        self.session(SESSION)
 
     def start(self, since: str | None = "s0", control: bool = False, **extra: str) -> None:
         state = self.root / "sync"
@@ -109,7 +113,7 @@ class MatrixChannelTest(unittest.TestCase):
             "JOSUI_MATRIX_TOKEN_FILE": str(self.root / "token"),
             "JOSUI_MATRIX_ALLOW": f"{OWNER}, ",
             "JOSUI_MATRIX_STATE": str(state),
-            "JOSUI_TRANSCRIPTS": str(self.transcripts),
+            "JOSUI_CLAUDE_DIR": str(self.claude_dir),
             **extra,
         }
         if control:
@@ -163,11 +167,15 @@ class MatrixChannelTest(unittest.TestCase):
         self.assertTrue(self.wait_for(lambda: len(self.hs.requests) > sent), f"no answer to {body!r}")
         return self.hs.requests[-1][2]["body"]
 
-    def transcript(self, *records: dict, name: str = "session", entrypoint: str = "cli") -> None:
+    def session(self, session_id: str) -> None:
+        """Name the current session of the channel's parent, this process."""
+        (self.claude_dir / f"sessions/{os.getpid()}.json").write_text(
+            json.dumps({"pid": os.getpid(), "sessionId": session_id}))
+
+    def transcript(self, *records: dict, session: str = SESSION, raw: str = "") -> None:
         """Append records to a session transcript, as Claude Code writes them."""
-        with (self.transcripts / "-home-josui-work" / f"{name}.jsonl").open("a") as out:
-            for record in records:
-                out.write(json.dumps({"entrypoint": entrypoint, **record}) + "\n")
+        with (self.claude_dir / f"projects/-home-josui-work/{session}.jsonl").open("a") as out:
+            out.write(raw + "".join(json.dumps(record) + "\n" for record in records))
 
     def texts(self, count: int, timeout: float = 5) -> list[str]:
         """Wait for count texts from the channel and return them all."""
@@ -294,10 +302,10 @@ class MatrixChannelTest(unittest.TestCase):
         self.transcript({"type": "user", "message": {"content": "earlier"}})
         self.start(control=True)
         self.text_back("/model sonnet")
-        # The Remote Control server's sessions write to the same directory.
+        # Other sessions write to the same directory.
         self.transcript({"type": "system", "commandRun": {"command": "model"},
                          "content": "<local-command-stdout>someone else</local-command-stdout>"},
-                        name="remote", entrypoint="sdk-cli")
+                        session=OTHER)
         self.transcript(
             {"type": "user", "message": {"content": "<command-name>/model</command-name>"}},
             {"type": "user", "message": {"content":
@@ -326,11 +334,12 @@ class MatrixChannelTest(unittest.TestCase):
 
     def test_clear_reports_done_from_its_new_transcript(self) -> None:
         self.open_fifo()
-        self.transcript({"type": "user", "message": {"content": "old session"}}, name="old")
+        self.transcript({"type": "user", "message": {"content": "old session"}})
         self.start(control=True)
         self.text_back("/clear")
+        self.session(OTHER)
         self.transcript({"type": "system", "subtype": "local_command", "commandRun": {"command": "clear"},
-                         "content": "<local-command-stdout></local-command-stdout>"}, name="new")
+                         "content": "<local-command-stdout></local-command-stdout>"}, session=OTHER)
         self.assertEqual(self.texts(2)[1], "/clear: done")
 
     def test_command_with_no_result_says_so(self) -> None:
@@ -338,6 +347,28 @@ class MatrixChannelTest(unittest.TestCase):
         self.start(control=True, JOSUI_RESULT_TIMEOUT="1")
         self.text_back("/fast on")
         self.assertEqual(self.texts(2)[1], "No result from /fast within 1 min.")
+
+    def test_queued_commands_get_their_own_results_in_order(self) -> None:
+        self.open_fifo()
+        self.start(control=True)
+        self.text_back("/effort high")
+        self.text_back("/fast off")
+
+        def ran(name: str, output: str) -> list[dict]:
+            stdout = f"<local-command-stdout>{output}</local-command-stdout>"
+            return [{"type": "user", "message": {"content": f"<command-name>/{name}</command-name>"}},
+                    {"type": "user", "message": {"content": stdout}}]
+
+        # A partial line is not read until the rest of it is written.
+        line = json.dumps(ran("effort", "Set effort to high")[1]) + "\n"
+        self.transcript(*ran("effort", "")[:1], raw="")
+        self.transcript(raw=line[:20])
+        time.sleep(1.5)
+        self.assertEqual(len(self.hs.requests), 2)
+        self.transcript(*ran("fast", "Fast mode OFF"), raw=line[20:])
+        self.assertEqual(self.texts(4)[2:], ["/effort: Set effort to high", "/fast: Fast mode OFF"])
+        time.sleep(1.5)
+        self.assertEqual(len(self.hs.requests), 4)
 
 
 if __name__ == "__main__":

@@ -17,8 +17,8 @@ Claude: only the session's input box runs a built-in. It goes, checked,
 to the control FIFO in JOSUI_CONTROL_FIFO, where channel-session types it
 into the session, and the channel acknowledges it itself. Every other
 text, skills included, is a channel event as before. The command's result
-is texted back too: Claude Code writes it to the session transcript, under
-JOSUI_TRANSCRIPTS (default ~/.claude/projects), and Results finds it there.
+is texted back too: Claude Code writes it to the session transcript, and
+Results finds it there.
 
 Standard library only; the homeserver is plaintext on an internal network.
 """
@@ -36,6 +36,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 
 NAME = "matrix"
@@ -140,7 +141,7 @@ class Channel:
         self.allow = allow
         self.state = state
         self.control = control
-        self.results = results or Results(Path.home() / ".claude/projects", self.tell)
+        self.results = results or Results(Path.home() / ".claude", self.tell)
         self.user_id = ""
         self.rooms: set[str] = set()
         self.write_lock = threading.Lock()
@@ -353,14 +354,19 @@ class Results:
 
     Every built-in leaves a record of itself and its output in the
     transcript, and /compact also leaves its token counts and summary. Only
-    the channel session's records count: they carry entrypoint "cli", and
-    the Remote Control server's sessions, in the same directory, "sdk-cli".
-    /clear starts a new file, so files that appear while a command is
-    pending are read from the start.
+    the channel session's own transcript is read: Claude Code names the
+    current session of each process in sessions/<pid>.json, and that
+    process is this server's parent. /clear starts a new session, so a
+    transcript that appears while a command is pending is read from the
+    start.
     """
 
-    def __init__(self, root: Path, tell, timeout: float = RESULT_TIMEOUT_SECONDS) -> None:
-        self.root = root
+    def __init__(
+        self, claude_dir: Path, tell: Callable[[str, str], None], timeout: float = RESULT_TIMEOUT_SECONDS,
+        pid: int | None = None,
+    ) -> None:
+        self.claude_dir = claude_dir
+        self.pid = os.getppid() if pid is None else pid
         self.tell = tell
         self.timeout = timeout
         self.pending: list[Pending] = []
@@ -385,9 +391,13 @@ class Results:
             self.pending.remove(pending)
 
     def files(self) -> list[Path]:
+        """The channel session's transcript, if there is one yet."""
         try:
-            return list(self.root.glob("*/*.jsonl"))
-        except OSError:
+            session = json.loads((self.claude_dir / f"sessions/{self.pid}.json").read_text())["sessionId"]
+            if not re.fullmatch(r"[0-9a-f-]{36}", session):
+                return []
+            return list((self.claude_dir / "projects").glob(f"*/{session}.jsonl"))
+        except (OSError, ValueError, KeyError, TypeError):
             return []
 
     def run(self) -> None:
@@ -419,7 +429,8 @@ class Results:
                 with path.open("rb") as transcript:
                     transcript.seek(offset)
                     data = transcript.read()
-            except OSError:
+            except OSError as exc:
+                log(f"transcript {path.name}: {exc}")
                 continue
             data = data[:data.rfind(b"\n") + 1]
             self.offsets[path] = offset + len(data)
@@ -428,7 +439,7 @@ class Results:
                     record = json.loads(line)
                 except ValueError:
                     continue
-                if isinstance(record, dict) and record.get("entrypoint") == "cli":
+                if isinstance(record, dict):
                     found.append(record)
         return found
 
@@ -492,9 +503,10 @@ def main() -> int:
     state = Path(env.get("JOSUI_MATRIX_STATE", Path.home() / ".config/josui/matrix-sync"))
     control = Path(env["JOSUI_CONTROL_FIFO"]) if env.get("JOSUI_CONTROL_FIFO") else None
     channel = Channel(Homeserver(homeserver, token), allow, state, control)
-    if env.get("JOSUI_TRANSCRIPTS"):
+    # Tests point these at a stand-in Claude Code home.
+    if env.get("JOSUI_CLAUDE_DIR"):
         timeout = float(env.get("JOSUI_RESULT_TIMEOUT", RESULT_TIMEOUT_SECONDS))
-        channel.results = Results(Path(env["JOSUI_TRANSCRIPTS"]), channel.tell, timeout)
+        channel.results = Results(Path(env["JOSUI_CLAUDE_DIR"]), channel.tell, timeout)
     for line in sys.stdin:
         if line.strip():
             channel.handle(json.loads(line))
