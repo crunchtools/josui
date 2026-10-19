@@ -16,7 +16,9 @@ A text that is one of the built-in commands in COMMANDS never reaches
 Claude: only the session's input box runs a built-in. It goes, checked,
 to the control FIFO in JOSUI_CONTROL_FIFO, where channel-session types it
 into the session, and the channel acknowledges it itself. Every other
-text, skills included, is a channel event as before.
+text, skills included, is a channel event as before. The command's result
+is texted back too: Claude Code writes it to the session transcript, and
+Results finds it there.
 
 Standard library only; the homeserver is plaintext on an internal network.
 """
@@ -34,6 +36,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 
 NAME = "matrix"
@@ -68,6 +71,12 @@ HELP = (
     + ". They run after any reply in progress. Anything else, skills included, goes to the session."
 )
 NOT_READY = "The session is not taking commands yet. Try again in a minute."
+RESULT_TIMEOUT_SECONDS = 900
+POLL_SECONDS = 1
+OUTPUT_CHARS = 1000
+SUMMARY_CHARS = 3000
+OUTPUT = re.compile(r"<local-command-(stdout|stderr)>(.*?)</local-command-\1>", re.S)
+ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 REPLY_TOOL = {
     "name": "reply",
     "description": "Send a text message to the operator in a Matrix room he wrote from.",
@@ -125,12 +134,14 @@ class Homeserver:
 
 class Channel:
     def __init__(
-        self, homeserver: Homeserver, allow: set[str], state: Path, control: Path | None = None
+        self, homeserver: Homeserver, allow: set[str], state: Path, control: Path | None = None,
+        results: Results | None = None,
     ) -> None:
         self.homeserver = homeserver
         self.allow = allow
         self.state = state
         self.control = control
+        self.results = results or Results(Path.home() / ".claude", self.tell)
         self.user_id = ""
         self.rooms: set[str] = set()
         self.write_lock = threading.Lock()
@@ -280,7 +291,12 @@ class Channel:
             self.tell(room_id, f"Usage: {usage}")
             return True
         line = f"/{name} {args}".rstrip()
-        self.tell(room_id, f"Sent {line}" if self.relay(line) else NOT_READY)
+        pending = self.results.expect(name, room_id)
+        if self.relay(line):
+            self.tell(room_id, f"Sent {line}, result to follow")
+        else:
+            self.results.forget(pending)
+            self.tell(room_id, NOT_READY)
         return True
 
     def relay(self, line: str) -> bool:
@@ -321,6 +337,154 @@ class Channel:
             staged.replace(self.state)
 
 
+class Pending:
+    """A relayed command whose result has not been found yet."""
+
+    def __init__(self, name: str, room_id: str, deadline: float) -> None:
+        self.name = name
+        self.room_id = room_id
+        self.deadline = deadline
+        self.seen = False  # its own record is in the transcript
+        self.compacted: dict | None = None
+        self.summary: str | None = None
+
+
+class Results:
+    """Finds each relayed command's result in the session transcript.
+
+    Every built-in leaves a record of itself and its output in the
+    transcript, and /compact also leaves its token counts and summary. Only
+    the channel session's own transcript is read: Claude Code names the
+    current session of each process in sessions/<pid>.json, and that
+    process is this server's parent. /clear starts a new session, so a
+    transcript that appears while a command is pending is read from the
+    start.
+    """
+
+    def __init__(
+        self, claude_dir: Path, tell: Callable[[str, str], None], timeout: float = RESULT_TIMEOUT_SECONDS,
+        pid: int | None = None,
+    ) -> None:
+        self.claude_dir = claude_dir
+        self.pid = os.getppid() if pid is None else pid
+        self.tell = tell
+        self.timeout = timeout
+        self.pending: list[Pending] = []
+        self.offsets: dict[Path, int] = {}
+        self.lock = threading.Lock()
+        self.thread: threading.Thread | None = None
+
+    def expect(self, name: str, room_id: str) -> Pending:
+        """Watch for name's result; call before relaying, so none is missed."""
+        with self.lock:
+            if not self.pending:
+                self.offsets = {path: path.stat().st_size for path in self.files()}
+            pending = Pending(name, room_id, time.monotonic() + self.timeout)
+            self.pending.append(pending)
+            if self.thread is None:
+                self.thread = threading.Thread(target=self.run, daemon=True)
+                self.thread.start()
+        return pending
+
+    def forget(self, pending: Pending) -> None:
+        with self.lock:
+            self.pending.remove(pending)
+
+    def files(self) -> list[Path]:
+        """The channel session's transcript, if there is one yet."""
+        try:
+            session = json.loads((self.claude_dir / f"sessions/{self.pid}.json").read_text())["sessionId"]
+            if not re.fullmatch(r"[0-9a-f-]{36}", session):
+                return []
+            return list((self.claude_dir / "projects").glob(f"*/{session}.jsonl"))
+        except (OSError, ValueError, KeyError, TypeError):
+            return []
+
+    def run(self) -> None:
+        while True:
+            time.sleep(POLL_SECONDS)
+            with self.lock:
+                texts = self.poll() if self.pending else []
+            for room_id, text in texts:
+                self.tell(room_id, text)
+
+    def poll(self) -> list[tuple[str, str]]:
+        texts = []
+        for record in self.records():
+            texts += self.consider(record)
+        now = time.monotonic()
+        for pending in [p for p in self.pending if p.deadline < now]:
+            self.pending.remove(pending)
+            log(f"no result for /{pending.name}")
+            minutes = max(1, round(self.timeout / 60))
+            texts.append((pending.room_id, f"No result from /{pending.name} within {minutes} min."))
+        return texts
+
+    def records(self) -> list[dict]:
+        """The complete lines written since the last poll, parsed."""
+        found = []
+        for path in self.files():
+            offset = self.offsets.get(path, 0)
+            try:
+                with path.open("rb") as transcript:
+                    transcript.seek(offset)
+                    appended = transcript.read()
+            except OSError as exc:
+                log(f"transcript {path.name}: {exc}")
+                continue
+            appended = appended[:appended.rfind(b"\n") + 1]
+            self.offsets[path] = offset + len(appended)
+            for line in appended.splitlines():
+                try:
+                    record = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(record, dict):
+                    found.append(record)
+        return found
+
+    def consider(self, record: dict) -> list[tuple[str, str]]:
+        message = record.get("message")
+        text = message.get("content") if isinstance(message, dict) else record.get("content")
+        text = text if isinstance(text, str) else ""
+        if record.get("subtype") == "compact_boundary" or record.get("isCompactSummary"):
+            compact = next((p for p in self.pending if p.name == "compact"), None)
+            if compact and record.get("isCompactSummary"):
+                compact.summary = text
+            elif compact:
+                compact.compacted = record.get("compactMetadata") or {}
+            return []
+        run = record.get("commandRun") or {}
+        for pending in self.pending:
+            if not pending.seen and (run.get("command") == pending.name
+                                     or f"<command-name>/{pending.name}</command-name>" in text):
+                pending.seen = True
+                break
+        output = OUTPUT.search(text)
+        pending = next((p for p in self.pending if p.seen), None)
+        if not output or not pending:
+            return []
+        self.pending.remove(pending)
+        log(f"result for /{pending.name}")
+        return [(pending.room_id, text) for text in answer(pending, output[1], output[2])]
+
+
+def answer(pending: Pending, stream: str, output: str) -> list[str]:
+    """The texts that report a command's output."""
+    output = ANSI.sub("", output).strip()
+    if pending.name == "compact" and stream == "stdout" and pending.compacted is not None:
+        meta = pending.compacted
+        texts = [f"Compacted {meta.get('preTokens', 0):,} → {meta.get('postTokens', 0):,} tokens"
+                 f" in {round(meta.get('durationMs', 0) / 1000)}s."]
+        summary = (pending.summary or "").partition("Summary:")[2].strip() or (pending.summary or "")
+        if len(summary) > SUMMARY_CHARS:
+            summary = summary[:SUMMARY_CHARS].rstrip() + f"… (trimmed, {len(summary):,} chars)"
+        return texts + [summary] if summary.strip() else texts
+    if len(output) > OUTPUT_CHARS:
+        output = output[:OUTPUT_CHARS].rstrip() + "…"
+    return [f"/{pending.name}: {output or 'done'}"]
+
+
 def error_result(text: str) -> dict:
     return {"content": [{"type": "text", "text": text}], "isError": True}
 
@@ -339,6 +503,10 @@ def main() -> int:
     state = Path(env.get("JOSUI_MATRIX_STATE", Path.home() / ".config/josui/matrix-sync"))
     control = Path(env["JOSUI_CONTROL_FIFO"]) if env.get("JOSUI_CONTROL_FIFO") else None
     channel = Channel(Homeserver(homeserver, token), allow, state, control)
+    # Tests point these at a stand-in Claude Code home.
+    if env.get("JOSUI_CLAUDE_DIR"):
+        timeout = float(env.get("JOSUI_RESULT_TIMEOUT", RESULT_TIMEOUT_SECONDS))
+        channel.results = Results(Path(env["JOSUI_CLAUDE_DIR"]), channel.tell, timeout)
     for line in sys.stdin:
         if line.strip():
             channel.handle(json.loads(line))

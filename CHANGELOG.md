@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-19
+
+### Added
+
+- Command results by text. After "Sent", the channel texts what the command
+  did, read from the session transcript: its output (`/model: Set model to
+  …`, `/clear: done`), or for `/compact` the token counts and the summary.
+  A command with no result in 15 minutes is reported as such.
+
 ## [0.3.0] - 2026-10-19
 
 ### Added

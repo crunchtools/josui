@@ -97,9 +97,14 @@ into the session after checking it against the same list:
 `/goal <condition>|clear`, `/mcp reconnect <server>|all`, `/reload-skills`,
 `/reload-plugins`.
 
-The channel acks each one ("Sent /clear"), since a cleared session has no turn
-to answer with, and answers a bad argument with its usage and `/help` with the
-list. A command sent mid-reply runs when the reply ends. `/model` and
+The channel acks each one ("Sent /clear, result to follow"), since a cleared
+session has no turn to answer with, and answers a bad argument with its usage
+and `/help` with the list. A command sent mid-reply runs when the reply ends.
+Then the channel texts the result, which it reads from the channel session's
+own transcript in `~/.claude/projects` (its parent's session ID, from
+`~/.claude/sessions/<pid>.json`): what the command printed, or for `/compact`
+the token counts and the summary, trimmed to 3,000 characters. With no result
+in 15 minutes it says so. `/model` and
 `/effort` also save the default in `settings.json`. Anything else, skills
 included, goes to the session unchanged. Left out: commands that open a
 dialog or picker, `/plan`, whose approval would wait for nobody, and `/exit`,
