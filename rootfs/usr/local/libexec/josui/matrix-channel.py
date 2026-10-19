@@ -428,13 +428,13 @@ class Results:
             try:
                 with path.open("rb") as transcript:
                     transcript.seek(offset)
-                    data = transcript.read()
+                    appended = transcript.read()
             except OSError as exc:
                 log(f"transcript {path.name}: {exc}")
                 continue
-            data = data[:data.rfind(b"\n") + 1]
-            self.offsets[path] = offset + len(data)
-            for line in data.splitlines():
+            appended = appended[:appended.rfind(b"\n") + 1]
+            self.offsets[path] = offset + len(appended)
+            for line in appended.splitlines():
                 try:
                     record = json.loads(line)
                 except ValueError:

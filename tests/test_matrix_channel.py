@@ -348,6 +348,22 @@ class MatrixChannelTest(unittest.TestCase):
         self.text_back("/fast on")
         self.assertEqual(self.texts(2)[1], "No result from /fast within 1 min.")
 
+    def test_bad_session_file_reads_no_transcript(self) -> None:
+        sessions = self.claude_dir / f"sessions/{os.getpid()}.json"
+        stdout = {"type": "system", "commandRun": {"command": "fast"},
+                  "content": "<local-command-stdout>Fast mode ON</local-command-stdout>"}
+        self.transcript(stdout, session=OTHER)
+        self.open_fifo()
+        self.start(control=True, JOSUI_RESULT_TIMEOUT="1")
+        for count, contents in enumerate(["{not json", json.dumps({"sessionId": "../*"}), None]):
+            if contents is None:
+                sessions.unlink()
+            else:
+                sessions.write_text(contents)
+            self.text_back("/fast on")
+            self.transcript(stdout, session=OTHER)
+            self.assertEqual(self.texts(2 * count + 2)[-1], "No result from /fast within 1 min.")
+
     def test_queued_commands_get_their_own_results_in_order(self) -> None:
         self.open_fifo()
         self.start(control=True)
