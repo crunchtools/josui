@@ -6,6 +6,27 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-19
+
+### Added
+
+- Built-in commands by text. A text of `/clear`, `/compact`, `/model`,
+  `/effort`, `/fast`, `/goal`, `/mcp reconnect`, `/reload-skills` or
+  `/reload-plugins` is checked by the channel, written to a control FIFO, and
+  typed into the session by `channel-session`, which checks it again. The
+  channel acks each one; `/help` lists them. Any other text, skills
+  included, still reaches the session as before.
+
+### Changed
+
+- `channel-session` takes the control FIFO as a third argument.
+
+### Fixed
+
+- Startup ends after 60 seconds with no dialog. The channel banner never
+  shows in the container, so `channel-session` waited for it forever and
+  logged a warning every minute.
+
 ## [0.2.0] - 2026-10-18
 
 ### Changed
