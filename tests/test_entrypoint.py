@@ -172,13 +172,16 @@ class EntrypointTest(unittest.TestCase):
         self.assertIn("a claude process ended (status 7)", result.stderr)
         self.assertEqual((self.home / "claude-args").read_text().split()[0], "remote-control")
         config = self.home / ".config/josui/channel-mcp.json"
+        control = self.home / ".config/josui/control"
         self.assertEqual((self.home / "session-args").read_text().split(),
-                         [str(config), "bypassPermissions"])
+                         [str(config), "bypassPermissions", str(control)])
         server = json.loads(config.read_text())["mcpServers"]["matrix"]
         self.assertEqual([server["command"], *server["args"]],
                          ["python3", "/usr/local/libexec/josui/matrix-channel.py"])
         self.assertEqual(server["env"]["JOSUI_MATRIX_ALLOW"], "@rcs_owner:josui.local")
         self.assertEqual(server["env"]["JOSUI_MATRIX_TOKEN_FILE"], "/etc/josui-matrix/token")
+        # The channel writes commands where channel-session reads them.
+        self.assertEqual(server["env"]["JOSUI_CONTROL_FIFO"], str(control))
 
     def test_channel_session_skips_onboarding_but_not_trust(self) -> None:
         self.run_entrypoint(env=self.channel_env())

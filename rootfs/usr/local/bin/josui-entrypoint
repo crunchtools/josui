@@ -92,17 +92,20 @@ unset TRENTINA_MCP_TOKEN
 # the server by the exact command the managed allowlist admits. The channel
 # session is interactive, so onboarding is recorded as done; the working
 # directory's trust question is left to the operator (see README).
+# channel-session makes the control FIFO the channel relays built-in
+# commands through.
 channel=
+control="$HOME/.config/josui/control"
 if [ -n "${JOSUI_MATRIX_HOMESERVER:-}" ]; then
   channel_config="$HOME/.config/josui/channel-mcp.json"
   mkdir -p "$(dirname "$channel_config")"
   jq -n --arg hs "$JOSUI_MATRIX_HOMESERVER" \
     --arg token_file "${JOSUI_MATRIX_TOKEN_FILE:-/etc/josui-matrix/token}" \
-    --arg allow "${JOSUI_MATRIX_ALLOW:-}" \
+    --arg allow "${JOSUI_MATRIX_ALLOW:-}" --arg control "$control" \
     '{mcpServers: {matrix: {type: "stdio", command: "python3",
       args: ["/usr/local/libexec/josui/matrix-channel.py"],
       env: {JOSUI_MATRIX_HOMESERVER: $hs, JOSUI_MATRIX_TOKEN_FILE: $token_file,
-            JOSUI_MATRIX_ALLOW: $allow}}}}' > "$channel_config"
+            JOSUI_MATRIX_ALLOW: $allow, JOSUI_CONTROL_FIFO: $control}}}}' > "$channel_config"
   state="$HOME/.claude.json"
   [ -s "$state" ] || echo '{}' > "$state"
   tmp=$(mktemp "$HOME/.claude.json.XXXXXX")
@@ -147,7 +150,7 @@ libexec=${JOSUI_LIBEXEC:-/usr/local/libexec/josui}
 claude "${server_args[@]}" > /dev/null &
 server=$!
 env -u DISABLE_TELEMETRY "$libexec/channel-session" "$channel" \
-  "${JOSUI_PERMISSION_MODE:-acceptEdits}" &
+  "${JOSUI_PERMISSION_MODE:-acceptEdits}" "$control" &
 session=$!
 trap 'kill "$server" "$session" 2>/dev/null' TERM INT
 status=0

@@ -12,13 +12,21 @@ sender and never on the room: anyone who can post in a room the agent sits
 in would otherwise be able to prompt it. Invites are joined only from the
 same senders.
 
+A text that is one of the built-in commands in COMMANDS never reaches
+Claude: only the session's input box runs a built-in. It goes, checked,
+to the control FIFO in JOSUI_CONTROL_FIFO, where channel-session types it
+into the session, and the channel acknowledges it itself. Every other
+text, skills included, is a channel event as before.
+
 Standard library only; the homeserver is plaintext on an internal network.
 """
 
 from __future__ import annotations
 
+import errno
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -40,6 +48,26 @@ INSTRUCTIONS = (
     "a text message, with no Markdown. For long work, reply first that you are on it, then "
     "reply again when it is done."
 )
+# Built-ins that work from a typed line, with no dialog and no one reading
+# the screen: name -> (arguments pattern, usage). channel-session allows the
+# same names. Arguments of the commands outside FREE_TEXT are lowercased.
+COMMANDS = {
+    "clear": (r".{0,500}", "/clear [name]"),
+    "compact": (r".{0,500}", "/compact [instructions]"),
+    "model": (r"[\w.\[\]-]{1,100}", "/model <alias or id>"),
+    "effort": (r"low|medium|high|xhigh|max|auto", "/effort low|medium|high|xhigh|max|auto"),
+    "fast": (r"on|off", "/fast on|off"),
+    "goal": (r".{1,500}", "/goal <condition>|clear"),
+    "mcp": (r"reconnect [\w.-]{1,100}", "/mcp reconnect <server>|all"),
+    "reload-skills": (r"", "/reload-skills"),
+    "reload-plugins": (r"", "/reload-plugins"),
+}
+FREE_TEXT = {"clear", "compact", "goal"}
+HELP = (
+    "Commands by text: " + ", ".join(usage for _, usage in COMMANDS.values())
+    + ". They run after any reply in progress. Anything else, skills included, goes to the session."
+)
+NOT_READY = "The session is not taking commands yet. Try again in a minute."
 REPLY_TOOL = {
     "name": "reply",
     "description": "Send a text message to the operator in a Matrix room he wrote from.",
@@ -96,10 +124,13 @@ class Homeserver:
 
 
 class Channel:
-    def __init__(self, homeserver: Homeserver, allow: set[str], state: Path) -> None:
+    def __init__(
+        self, homeserver: Homeserver, allow: set[str], state: Path, control: Path | None = None
+    ) -> None:
         self.homeserver = homeserver
         self.allow = allow
         self.state = state
+        self.control = control
         self.user_id = ""
         self.rooms: set[str] = set()
         self.write_lock = threading.Lock()
@@ -136,8 +167,8 @@ class Channel:
                 # with server/discover first, and a result there negotiates the
                 # stateless protocol revision, which has no path for channel
                 # notifications, so the session would silently skip the channel.
-                self.send({"jsonrpc": "2.0", "id": request_id,
-                           "error": {"code": METHOD_NOT_FOUND, "message": f"no method {message.get('method')}"}})
+                error = {"code": METHOD_NOT_FOUND, "message": f"no method {message.get('method')}"}
+                self.send({"jsonrpc": "2.0", "id": request_id, "error": error})
 
     def call_tool(self, params: dict) -> dict:
         args = params.get("arguments") or {}
@@ -219,11 +250,62 @@ class Channel:
         self.rooms.add(room_id)
         body = event.get("content", {}).get("body")
         if deliver and isinstance(body, str) and body.strip():
+            if self.control and self.command(room_id, body):
+                return
             self.send({
                 "jsonrpc": "2.0",
                 "method": "notifications/claude/channel",
                 "params": {"content": body, "meta": {"room_id": room_id, "sender": sender}},
             })
+
+    # Built-in commands -------------------------------------------------
+
+    def command(self, room_id: str, body: str) -> bool:
+        """Relay a built-in command and answer it; False if body is not one."""
+        text = " ".join(body.split())
+        if not text.startswith("/"):
+            return False
+        name, _, args = text[1:].partition(" ")
+        # Phone keyboards capitalize and punctuate.
+        name = name.lower().rstrip(".!?")
+        if name == "help":
+            self.tell(room_id, HELP)
+            return True
+        if name not in COMMANDS:
+            return False
+        pattern, usage = COMMANDS[name]
+        if name not in FREE_TEXT:
+            args = args.lower().rstrip(".!?")
+        if not re.fullmatch(pattern, args) or not args.isprintable():
+            self.tell(room_id, f"Usage: {usage}")
+            return True
+        line = f"/{name} {args}".rstrip()
+        self.tell(room_id, f"Sent {line}" if self.relay(line) else NOT_READY)
+        return True
+
+    def relay(self, line: str) -> bool:
+        try:
+            fd = os.open(self.control, os.O_WRONLY | os.O_NONBLOCK)
+        except OSError as exc:
+            # ENXIO: channel-session has not opened it yet.
+            if exc.errno not in (errno.ENXIO, errno.ENOENT):
+                log(f"control FIFO: {exc}")
+            return False
+        try:
+            os.write(fd, (line + "\n").encode())
+            log(f"relayed {line.split()[0]}")  # arguments can be private
+            return True
+        except OSError as exc:
+            log(f"control FIFO: {exc}")
+            return False
+        finally:
+            os.close(fd)
+
+    def tell(self, room_id: str, text: str) -> None:
+        try:
+            self.homeserver.send_text(room_id, text)
+        except (urllib.error.URLError, OSError) as exc:
+            log(f"send to {room_id} failed: {exc}")
 
     def load_since(self) -> str | None:
         try:
@@ -255,7 +337,8 @@ def main() -> int:
     if not allow:
         log("JOSUI_MATRIX_ALLOW is empty: no message will get through")
     state = Path(env.get("JOSUI_MATRIX_STATE", Path.home() / ".config/josui/matrix-sync"))
-    channel = Channel(Homeserver(homeserver, token), allow, state)
+    control = Path(env["JOSUI_CONTROL_FIFO"]) if env.get("JOSUI_CONTROL_FIFO") else None
+    channel = Channel(Homeserver(homeserver, token), allow, state, control)
     for line in sys.stdin:
         if line.strip():
             channel.handle(json.loads(line))

@@ -9,27 +9,54 @@
 # was asked for. It does not answer the working directory's trust
 # question: the operator does that once, by hand.
 #
-#   channel-session <mcp-config> <permission-mode>
+#   channel-session <mcp-config> <permission-mode> <control-fifo>
+#
+# After startup it types the built-in commands the channel writes to the
+# control FIFO, one per line, into the session: texts reach Claude as
+# channel events, and only the input box runs a built-in. A line is typed
+# only if it is one of the commands below; anything else is dropped.
 #
 # The TUI draws the gaps between words as cursor moves, so the patterns are
 # single words. Each dialog is answered once. Exits with Claude's status.
 
-if {[llength $argv] != 2} {
-    puts stderr "usage: channel-session <mcp-config> <permission-mode>"
+if {[llength $argv] != 3} {
+    puts stderr "usage: channel-session <mcp-config> <permission-mode> <control-fifo>"
     exit 2
 }
-lassign $argv config mode
+lassign $argv config mode fifo
 
 proc note {message} { puts stderr "channel-session: $message" }
+
+# Kept in step with COMMANDS in matrix-channel.py, which checks the arguments.
+# Tcl caps a repetition count at 255, so the length is checked apart.
+set allowed {^/(clear|compact|model|effort|fast|goal|mcp|reload-skills|reload-plugins)( [[:print:]]+)?$}
+
+proc finish {} {
+    global claude
+    catch {wait -i $claude} status
+    set code [lindex $status 3]
+    note "claude exited with status $code"
+    exit $code
+}
+
+file delete -force $fifo
+exec mkfifo -m 0600 $fifo
 
 log_user 0
 set stty_init "rows 50 columns 160"
 spawn -noecho claude --mcp-config $config --permission-mode $mode \
     --dangerously-load-development-channels server:matrix
+set claude $spawn_id
 
+# Startup: answer the dialogs. It ends when the channel banner shows or
+# after a quiet spell with no dialog (60s; JOSUI_STARTUP_QUIET for tests),
+# so later output is never taken for one. The banner does not show in the
+# container, so the quiet spell is what ends it there.
 set down "\033\[B"
 set answered {}
-set timeout 60
+set quiet 60
+if {[info exists env(JOSUI_STARTUP_QUIET)]} { set quiet $env(JOSUI_STARTUP_QUIET) }
+set timeout $quiet
 expect {
     -re {inject} {
         # "Channels (experimental) messages from server:matrix inject
@@ -64,19 +91,32 @@ expect {
         exp_continue
     }
     timeout {
-        note "no channel after 60s; a dialog this script does not know may be waiting"
-        exp_continue
+        note "no dialog for ${quiet}s, startup done"
     }
     eof {
-        note "claude exited before the channel was registered"
+        note "claude exited during startup"
         catch wait status
         exit [expr {[lindex $status 3] ? [lindex $status 3] : 1}]
     }
 }
 
+# Read-write, so the FIFO never reads as closed while no writer has it open.
+spawn -noecho -open [open $fifo {RDWR NONBLOCK}]
+set control $spawn_id
+note "taking commands on $fifo"
+
 set timeout -1
-expect eof
-catch wait status
-set code [lindex $status 3]
-note "claude exited with status $code"
-exit $code
+expect {
+    -i $claude eof { finish }
+    -i $control -re {([^\n]*)\n} {
+        set line $expect_out(1,string)
+        if {[string length $line] <= 520 && [regexp $allowed $line]} {
+            send -i $claude "$line\r"
+            # Only the name: free-text arguments can be private.
+            note "sent [lindex [split $line] 0]"
+        } else {
+            note "dropped a control line that is not an allowed command"
+        }
+        exp_continue
+    }
+}

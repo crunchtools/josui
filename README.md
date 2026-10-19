@@ -78,12 +78,32 @@ and claude.ai shows only the server's sessions.
   for a channel, and answers the warning that
   `--dangerously-load-development-channels` shows at every start. A custom
   channel is not on Anthropic's allowlist, so it loads only with that flag.
-  It logs to stderr each dialog it answers, and says so if one it does not
-  know is still waiting after 60 seconds. It never answers the working
+  It logs to stderr each dialog it answers, and ends startup after 60
+  seconds with no dialog. It never answers the working
   directory's trust question: if that is still open, it exits and names the
   one-time command (see [Run it](#run-it)).
 - Managed settings admit the channel by its exact command. When either Claude
   process ends, the container ends and the unit restarts both.
+
+### Commands by text
+
+Only the input box runs a built-in command; a text reaches Claude as a
+channel event. So the channel takes these itself, writes each to a control
+FIFO (`~/.config/josui/control`, mode 0600), and `channel-session` types it
+into the session after checking it against the same list:
+
+`/clear [name]`, `/compact [instructions]`, `/model <alias or id>`,
+`/effort low|medium|high|xhigh|max|auto`, `/fast on|off`,
+`/goal <condition>|clear`, `/mcp reconnect <server>|all`, `/reload-skills`,
+`/reload-plugins`.
+
+The channel acks each one ("Sent /clear"), since a cleared session has no turn
+to answer with, and answers a bad argument with its usage and `/help` with the
+list. A command sent mid-reply runs when the reply ends. `/model` and
+`/effort` also save the default in `settings.json`. Anything else, skills
+included, goes to the session unchanged. Left out: commands that open a
+dialog or picker, `/plan`, whose approval would wait for nobody, and `/exit`,
+which would end the container and the Remote Control server with it.
 
 ## Run it
 

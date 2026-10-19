@@ -95,8 +95,9 @@ class MatrixChannelTest(unittest.TestCase):
         self.hs = FakeHomeserver()
         self.addCleanup(self.hs.close)
         self.next_id = 0
+        self.fifo = self.root / "control"
 
-    def start(self, since: str | None = "s0") -> None:
+    def start(self, since: str | None = "s0", control: bool = False) -> None:
         state = self.root / "sync"
         if since:
             state.write_text(since)
@@ -107,6 +108,8 @@ class MatrixChannelTest(unittest.TestCase):
             "JOSUI_MATRIX_ALLOW": f"{OWNER}, ",
             "JOSUI_MATRIX_STATE": str(state),
         }
+        if control:
+            env["JOSUI_CONTROL_FIFO"] = str(self.fifo)
         self.proc = subprocess.Popen(
             [sys.executable, str(CHANNEL)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, env=env, text=True,
@@ -141,6 +144,20 @@ class MatrixChannelTest(unittest.TestCase):
 
     def reply(self, room: str, text: str) -> dict:
         return self.request("tools/call", {"name": "reply", "arguments": {"room_id": room, "text": text}})
+
+    def open_fifo(self) -> int:
+        """Make the control FIFO and hold it open for reading, as channel-session does."""
+        os.mkfifo(self.fifo, 0o600)
+        fd = os.open(self.fifo, os.O_RDWR | os.O_NONBLOCK)
+        self.addCleanup(os.close, fd)
+        return fd
+
+    def text_back(self, body: str) -> str:
+        """Send the owner's text and return what the channel texts back."""
+        sent = len(self.hs.requests)
+        self.hs.batches.put(message(OWNER, body))
+        self.assertTrue(self.wait_for(lambda: len(self.hs.requests) > sent), f"no answer to {body!r}")
+        return self.hs.requests[-1][2]["body"]
 
     def wait_for(self, predicate, timeout: float = 5) -> bool:
         end = time.time() + timeout
@@ -214,6 +231,47 @@ class MatrixChannelTest(unittest.TestCase):
         self.hs.batches.put(message(OWNER, "new"))
         self.assertEqual(self.read()["params"]["content"], "new")
         self.assertTrue(self.wait_for(lambda: (self.root / "sync").exists()))
+
+    def test_builtin_command_goes_to_the_fifo_not_the_session(self) -> None:
+        fd = self.open_fifo()
+        self.start(control=True)
+        # Phone keyboards capitalize and punctuate.
+        self.assertEqual(self.text_back("/Clear."), "Sent /clear")
+        self.assertEqual(os.read(fd, 4096), b"/clear\n")
+        self.assertIsNone(self.read(timeout=1))
+
+    def test_command_arguments_are_checked(self) -> None:
+        fd = self.open_fifo()
+        self.start(control=True)
+        self.assertEqual(self.text_back("/model"), "Usage: /model <alias or id>")
+        self.assertEqual(self.text_back("/fast maybe"), "Usage: /fast on|off")
+        self.assertEqual(self.text_back("/effort High"), "Sent /effort high")
+        self.assertEqual(self.text_back("/compact keep\nthe RT  context"),
+                         "Sent /compact keep the RT context")
+        self.assertEqual(os.read(fd, 4096), b"/effort high\n/compact keep the RT context\n")
+        self.assertIsNone(self.read(timeout=1))
+
+    def test_help_is_answered_by_the_channel(self) -> None:
+        self.open_fifo()
+        self.start(control=True)
+        answer = self.text_back("/help")
+        self.assertTrue(answer.startswith("Commands by text: /clear [name], /compact"), answer)
+        self.assertIsNone(self.read(timeout=1))
+
+    def test_command_with_no_reader_is_not_ready(self) -> None:
+        os.mkfifo(self.fifo, 0o600)
+        self.start(control=True)
+        self.assertIn("not taking commands yet", self.text_back("/clear"))
+
+    def test_skills_and_other_texts_still_reach_the_session(self) -> None:
+        fd = self.open_fifo()
+        self.start(control=True)
+        for body in ("/cc", "/context", "clear the cache"):
+            self.hs.batches.put(message(OWNER, body))
+            self.assertEqual(self.read()["params"]["content"], body)
+        self.assertEqual(self.hs.requests, [])
+        with self.assertRaises(BlockingIOError):
+            os.read(fd, 4096)
 
 
 if __name__ == "__main__":
