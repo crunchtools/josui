@@ -112,7 +112,8 @@ expect {
         set line $expect_out(1,string)
         if {[string length $line] <= 520 && [regexp $allowed $line]} {
             send -i $claude "$line\r"
-            note "sent $line"
+            # Only the name: free-text arguments can be private.
+            note "sent [lindex [split $line] 0]"
         } else {
             note "dropped a control line that is not an allowed command"
         }

@@ -293,7 +293,7 @@ class Channel:
             return False
         try:
             os.write(fd, (line + "\n").encode())
-            log(f"relayed {line}")
+            log(f"relayed {line.split()[0]}")  # arguments can be private
             return True
         except OSError as exc:
             log(f"control FIFO: {exc}")
