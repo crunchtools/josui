@@ -96,8 +96,10 @@ class MatrixChannelTest(unittest.TestCase):
         self.addCleanup(self.hs.close)
         self.next_id = 0
         self.fifo = self.root / "control"
+        self.transcripts = self.root / "projects"
+        (self.transcripts / "-home-josui-work").mkdir(parents=True)
 
-    def start(self, since: str | None = "s0", control: bool = False) -> None:
+    def start(self, since: str | None = "s0", control: bool = False, **extra: str) -> None:
         state = self.root / "sync"
         if since:
             state.write_text(since)
@@ -107,6 +109,8 @@ class MatrixChannelTest(unittest.TestCase):
             "JOSUI_MATRIX_TOKEN_FILE": str(self.root / "token"),
             "JOSUI_MATRIX_ALLOW": f"{OWNER}, ",
             "JOSUI_MATRIX_STATE": str(state),
+            "JOSUI_TRANSCRIPTS": str(self.transcripts),
+            **extra,
         }
         if control:
             env["JOSUI_CONTROL_FIFO"] = str(self.fifo)
@@ -158,6 +162,18 @@ class MatrixChannelTest(unittest.TestCase):
         self.hs.batches.put(message(OWNER, body))
         self.assertTrue(self.wait_for(lambda: len(self.hs.requests) > sent), f"no answer to {body!r}")
         return self.hs.requests[-1][2]["body"]
+
+    def transcript(self, *records: dict, name: str = "session", entrypoint: str = "cli") -> None:
+        """Append records to a session transcript, as Claude Code writes them."""
+        with (self.transcripts / "-home-josui-work" / f"{name}.jsonl").open("a") as out:
+            for record in records:
+                out.write(json.dumps({"entrypoint": entrypoint, **record}) + "\n")
+
+    def texts(self, count: int, timeout: float = 5) -> list[str]:
+        """Wait for count texts from the channel and return them all."""
+        self.assertTrue(self.wait_for(lambda: len(self.hs.requests) >= count, timeout),
+                        [r[2] for r in self.hs.requests])
+        return [body["body"] for _, _, body in self.hs.requests]
 
     def wait_for(self, predicate, timeout: float = 5) -> bool:
         end = time.time() + timeout
@@ -236,7 +252,7 @@ class MatrixChannelTest(unittest.TestCase):
         fd = self.open_fifo()
         self.start(control=True)
         # Phone keyboards capitalize and punctuate.
-        self.assertEqual(self.text_back("/Clear."), "Sent /clear")
+        self.assertEqual(self.text_back("/Clear."), "Sent /clear, result to follow")
         self.assertEqual(os.read(fd, 4096), b"/clear\n")
         self.assertIsNone(self.read(timeout=1))
 
@@ -245,9 +261,9 @@ class MatrixChannelTest(unittest.TestCase):
         self.start(control=True)
         self.assertEqual(self.text_back("/model"), "Usage: /model <alias or id>")
         self.assertEqual(self.text_back("/fast maybe"), "Usage: /fast on|off")
-        self.assertEqual(self.text_back("/effort High"), "Sent /effort high")
+        self.assertEqual(self.text_back("/effort High"), "Sent /effort high, result to follow")
         self.assertEqual(self.text_back("/compact keep\nthe RT  context"),
-                         "Sent /compact keep the RT context")
+                         "Sent /compact keep the RT context, result to follow")
         self.assertEqual(os.read(fd, 4096), b"/effort high\n/compact keep the RT context\n")
         self.assertIsNone(self.read(timeout=1))
 
@@ -272,6 +288,56 @@ class MatrixChannelTest(unittest.TestCase):
         self.assertEqual(self.hs.requests, [])
         with self.assertRaises(BlockingIOError):
             os.read(fd, 4096)
+
+    def test_command_result_is_texted_back(self) -> None:
+        self.open_fifo()
+        self.transcript({"type": "user", "message": {"content": "earlier"}})
+        self.start(control=True)
+        self.text_back("/model sonnet")
+        # The Remote Control server's sessions write to the same directory.
+        self.transcript({"type": "system", "commandRun": {"command": "model"},
+                         "content": "<local-command-stdout>someone else</local-command-stdout>"},
+                        name="remote", entrypoint="sdk-cli")
+        self.transcript(
+            {"type": "user", "message": {"content": "<command-name>/model</command-name>"}},
+            {"type": "user", "message": {"content":
+                "<local-command-stdout>Set model to \x1b[1mSonnet 5.5\x1b[22m</local-command-stdout>"}},
+        )
+        self.assertEqual(self.texts(2)[1], "/model: Set model to Sonnet 5.5")
+        self.assertIsNone(self.read(timeout=1))
+
+    def test_compact_texts_the_token_counts_and_summary(self) -> None:
+        self.open_fifo()
+        self.start(control=True)
+        self.text_back("/compact")
+        summary = "This session is being continued.\n\nSummary:\n1. Intent: " + "x" * 3100
+        self.transcript(
+            {"type": "system", "subtype": "compact_boundary",
+             "compactMetadata": {"preTokens": 50160, "postTokens": 6588, "durationMs": 13176}},
+            {"type": "user", "isCompactSummary": True, "message": {"content": summary}},
+            {"type": "user", "message": {"content": "<command-name>/compact</command-name>"}},
+            {"type": "user", "message": {"content":
+                "<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>"}},
+        )
+        texts = self.texts(3)
+        self.assertEqual(texts[1], "Compacted 50,160 → 6,588 tokens in 13s.")
+        self.assertTrue(texts[2].startswith("1. Intent: xxx"), texts[2][:40])
+        self.assertTrue(texts[2].endswith("… (trimmed, 3,111 chars)"), texts[2][-40:])
+
+    def test_clear_reports_done_from_its_new_transcript(self) -> None:
+        self.open_fifo()
+        self.transcript({"type": "user", "message": {"content": "old session"}}, name="old")
+        self.start(control=True)
+        self.text_back("/clear")
+        self.transcript({"type": "system", "subtype": "local_command", "commandRun": {"command": "clear"},
+                         "content": "<local-command-stdout></local-command-stdout>"}, name="new")
+        self.assertEqual(self.texts(2)[1], "/clear: done")
+
+    def test_command_with_no_result_says_so(self) -> None:
+        self.open_fifo()
+        self.start(control=True, JOSUI_RESULT_TIMEOUT="1")
+        self.text_back("/fast on")
+        self.assertEqual(self.texts(2)[1], "No result from /fast within 1 min.")
 
 
 if __name__ == "__main__":
