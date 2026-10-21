@@ -6,6 +6,28 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-21
+
+### Changed
+
+- The agent runtime comes from crunchtools/claude-agent's packages
+  (`claude-agent`, `claude-agent-matrix`, `claude-agent-trentina`) and Claude
+  Code from Anthropic's signed repository (2.1.304), instead of files copied
+  into the image and an npm install.
+- The text session is `claude-agent run`: keyboard in, hooks out, with no
+  Claude Code channel, no `--dangerously-load-development-channels` and no
+  expect. Only each turn's final answer is texted back, with a typing
+  indicator while the turn runs; texts sent mid-turn wait; `/stop [text]`
+  interrupts; answers go only to a one-to-one room.
+- The entrypoint hands `JOSUI_*` settings to claude-agent under its own
+  names, so josui.env is unchanged; the bridge keeps the channel's sync
+  position.
+
+### Removed
+
+- `matrix-channel.py`, `channel-session`, the hooks and the managed
+  settings in `rootfs/`; their tests moved to crunchtools/claude-agent.
+
 ## [0.4.1] - 2026-10-20
 
 ### Changed

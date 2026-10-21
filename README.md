@@ -43,71 +43,48 @@ The container sits on an internal network with no DNS. Its only peer is the
 
 ## Controls
 
-- **Circuit breakers** (`hooks.py breaker`, PreToolUse): `JOSUI_MAX_TOOL_CALLS` per
-  conversation (default 500) and `JOSUI_MAX_REPEAT` identical calls in a row
-  (default 5). A tripped conversation stays stopped.
-- **Audit** (`hooks.py audit`, PostToolUse): timestamp, tool, server, redacted
-  arguments, result and conversation, in `audit-YYYY-MM-DD.jsonl`, kept 120 days.
-- **Local memory guard** (`deny-local-memory.sh`, PreToolUse): refuses writes into
-  Claude Code's file-based memory; the gateway's memory graph is the only store.
-- **Prompts off** (`allow-hook.sh`, PreToolUse): with `JOSUI_ANSWER_PERMISSIONS=1`
-  it answers every permission question except a question to the person and
-  plan approval, in whatever mode the app picked. A deny from any hook wins.
-- All of these are in `/etc/claude-code/managed-settings.json`, which also sets
-  `allowManagedHooksOnly`: hooks from the mounted `settings.json`, from this
-  home, or from a checkout's `.claude/settings.json` do not run. `WebSearch`
-  and `WebFetch` are denied there too: they would bring web pages back past the
-  gateway's judging.
+The agent runtime is [claude-agent](https://github.com/crunchtools/claude-agent),
+installed from its packages: `claude-agent` (breakers, audit, prompts-off, the
+session supervisor), `claude-agent-matrix` (the text bridge) and
+`claude-agent-trentina` (the crunchtools policy). Every Claude Code session in
+the container runs with `CLAUDE_AGENT=1`, so all of them are counted and logged.
 
-## Matrix channel
+- **Circuit breakers:** `JOSUI_MAX_TOOL_CALLS` per conversation (default 500)
+  and `JOSUI_MAX_REPEAT` identical calls in a row (default 5). A tripped
+  conversation stays stopped.
+- **Audit:** one JSON line per tool call in `/var/log/josui`, kept 120 days.
+- **Prompts off:** with `JOSUI_ANSWER_PERMISSIONS=1`, every permission question
+  is answered except a question to the person and plan approval.
+- **Policy:** the gateway is the only MCP server, only managed hooks run,
+  `WebSearch` and `WebFetch` are denied, and Claude Code's file memory stays
+  empty.
 
-With `JOSUI_MATRIX_HOMESERVER` set, a second Claude process runs beside the
-Remote Control server: an interactive session with a
-[channel](https://code.claude.com/docs/en/channels-reference) that carries a
-Matrix DM into it. On a crunchtools host the homeserver is the agent's own,
-and Trentina's RCS bridge puts the operator's texts there, so a text from the
-phone lands in that session and Claude answers with the channel's `reply`
-tool. The session is not on Remote Control: the operator reaches it by text,
-and claude.ai shows only the server's sessions.
+The entrypoint hands the `JOSUI_*` settings to claude-agent under its own
+names. See claude-agent's [hooks](https://github.com/crunchtools/claude-agent/blob/main/docs/hooks.md)
+and [policy](https://github.com/crunchtools/claude-agent/blob/main/docs/policy.md) pages.
 
-- `matrix-channel.py` is the channel, a stdio MCP server using only the
-  standard library. It lets through messages, and joins invites, only from the
-  senders in `JOSUI_MATRIX_ALLOW`, checked on the sender, never on the room.
-  It replies only into rooms those senders wrote from.
-- `channel-session` (expect) gives the session the terminal Claude Code needs
-  for a channel, and answers the warning that
-  `--dangerously-load-development-channels` shows at every start. A custom
-  channel is not on Anthropic's allowlist, so it loads only with that flag.
-  It logs to stderr each dialog it answers, and ends startup after 60
-  seconds with no dialog. It never answers the working
-  directory's trust question: if that is still open, it exits and names the
-  one-time command (see [Run it](#run-it)).
-- Managed settings admit the channel by its exact command. When either Claude
-  process ends, the container ends and the unit restarts both.
+## Text session
 
-### Commands by text
+With `JOSUI_MATRIX_HOMESERVER` set, `claude-agent run` holds a second Claude
+Code session beside the Remote Control server, and its Matrix bridge carries
+the operator's texts in and each turn's final answer out. On a crunchtools
+host the homeserver is the agent's own, and Trentina's RCS bridge puts the
+operator's texts there. The session is not on Remote Control: the operator
+reaches it by text, and claude.ai shows only the server's sessions.
 
-Only the input box runs a built-in command; a text reaches Claude as a
-channel event. So the channel takes these itself, writes each to a control
-FIFO (`~/.config/josui/control`, mode 0600), and `channel-session` types it
-into the session after checking it against the same list:
+- Texts come only from `JOSUI_MATRIX_ALLOW`, in a one-to-one room. A text
+  sent while a turn runs waits for it to end; `/stop [text]` interrupts.
+  The phone shows a typing indicator for the length of a turn.
+- Built-ins by text: `/clear`, `/compact`, `/model`, `/effort`, `/fast`,
+  `/goal`, `/mcp reconnect`, `/reload-skills`, `/reload-plugins`; each texts
+  back its result. Other `/names` run as skills; `!` is refused.
+- `podman exec -it <service> claude-agent attach` shows the session live;
+  `--rw` to answer its working-directory trust question.
+- When either Claude process ends, the container ends and the unit restarts
+  both.
 
-`/clear [name]`, `/compact [instructions]`, `/model <alias or id>`,
-`/effort low|medium|high|xhigh|max|auto`, `/fast on|off`,
-`/goal <condition>|clear`, `/mcp reconnect <server>|all`, `/reload-skills`,
-`/reload-plugins`.
-
-The channel answers a bad argument with its usage and `/help` with the
-list. A command sent mid-reply runs when the reply ends. The only text back
-is the result, which the channel reads from the channel session's
-own transcript in `~/.claude/projects` (its parent's session ID, from
-`~/.claude/sessions/<pid>.json`): what the command printed, or for `/compact`
-the token counts and the summary, trimmed to 3,000 characters. With no result
-in 15 minutes it says so. `/model` and
-`/effort` also save the default in `settings.json`. Anything else, skills
-included, goes to the session unchanged. Left out: commands that open a
-dialog or picker, `/plan`, whose approval would wait for nobody, and `/exit`,
-which would end the container and the Remote Control server with it.
+See claude-agent's [supervisor](https://github.com/crunchtools/claude-agent/blob/main/docs/supervisor.md)
+and [Matrix](https://github.com/crunchtools/claude-agent/blob/main/docs/matrix.md) pages.
 
 ## Run it
 
@@ -120,7 +97,7 @@ podman exec -it <service> claude auth login    # claude.ai account; prints a URL
 ```
 
 Then restart the service. A new working directory also needs its trust
-question answered once: `podman exec -it -w <dir> <service> claude`.
+question answered once: `podman exec -it <service> claude-agent attach --rw`.
 
 ## Environment
 
@@ -134,7 +111,7 @@ question answered once: `podman exec -it -w <dir> <service> claude`.
 | `JOSUI_CAPACITY` | `2` | Concurrent sessions. |
 | `JOSUI_PERMISSION_MODE` | `acceptEdits` | Claude Code permission mode for new sessions. `bypassPermissions` asks nothing; hooks and deny rules still apply. The app sets its own mode on a session it opens, which overrides this. See the constitution's human-in-the-loop rule for the hook a deployment that takes that deviation uses there. |
 | `JOSUI_ANSWER_PERMISSIONS` | unset | `1` turns on the prompts-off hook (the constitution's deviation). |
-| `JOSUI_MATRIX_HOMESERVER` | unset | The agent's homeserver (`http://<address>:6167`). Set, it turns on the Matrix channel. |
+| `JOSUI_MATRIX_HOMESERVER` | unset | The agent's homeserver (`http://<private address>:6167`). Set, it turns on the text session. |
 | `JOSUI_MATRIX_TOKEN_FILE` | `/etc/josui-matrix/token` | The agent account's access token, in a read-only mount. |
 | `JOSUI_MATRIX_ALLOW` | unset | Comma list of the exact Matrix IDs whose messages reach the session. Empty lets nothing through. |
 | `JOSUI_MAX_TOOL_CALLS`, `JOSUI_MAX_REPEAT` | `500`, `5` | Circuit breakers. |

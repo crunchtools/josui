@@ -51,7 +51,6 @@ class EntrypointTest(unittest.TestCase):
             "HOME": str(self.home),
             "JOSUI_CONFIG_DIR": str(self.config),
             "JOSUI_SKILLS_DIR": str(self.skills),
-            "JOSUI_AUDIT_DIR": str(self.root / "audit"),
             "TRENTINA_MCP_URL": "http://192.0.2.2:8019/gateway/agent1/mcp",
             "TRENTINA_MCP_TOKEN": "s3cret-token",
             "TRENTINA_GIT_URL": "http://192.0.2.2:8019/git/",
@@ -146,69 +145,67 @@ class EntrypointTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((self.home / "claude-args").read_text().split(), ["auth", "login"])
 
-    def channel_env(self) -> dict[str, str]:
-        libexec = self.root / "libexec"
-        libexec.mkdir()
-        session = libexec / "channel-session"
-        session.write_text('#!/bin/bash\nprintf "%s\\n" "$@" > "$HOME/session-args"\n'
-                           'env > "$HOME/session-env"\nexit 7\n')
-        session.chmod(0o755)
+    def session_env(self) -> dict[str, str]:
+        agent = self.root / "bin/claude-agent"
+        agent.write_text('#!/bin/bash\nprintf "%s\\n" "$@" > "$HOME/agent-args"\n'
+                         'env > "$HOME/agent-env"\nexit 7\n')
+        agent.chmod(0o755)
         claude = self.root / "bin/claude"
         claude.write_text('#!/bin/bash\nprintf "%s\\n" "$@" > "$HOME/claude-args"\n'
                           'env > "$HOME/claude-env"\nexec sleep 30\n')
         return {
             **self.env,
-            "JOSUI_LIBEXEC": str(libexec),
             "JOSUI_MATRIX_HOMESERVER": "http://192.0.2.3:6167",
             "JOSUI_MATRIX_TOKEN_FILE": "/etc/josui-matrix/token",
-            "JOSUI_MATRIX_ALLOW": "@rcs_owner:josui.local",
+            "JOSUI_MATRIX_ALLOW": "@alice:example.org",
             "JOSUI_PERMISSION_MODE": "bypassPermissions",
         }
 
-    def test_channel_runs_beside_remote_control_and_either_ending_stops_both(self) -> None:
-        result = self.run_entrypoint(env=self.channel_env())
-        # The stand-in session exits 7 at once; the server is stopped too.
+    def agent_env(self) -> dict[str, str]:
+        lines = (self.home / "agent-env").read_text().splitlines()
+        return dict(line.split("=", 1) for line in lines if "=" in line)
+
+    def test_text_session_runs_beside_remote_control_and_either_ending_stops_both(self) -> None:
+        result = self.run_entrypoint(env=self.session_env())
+        # The stand-in claude-agent exits 7 at once; the server is stopped too.
         self.assertEqual(result.returncode, 7, result.stderr)
         self.assertIn("a claude process ended (status 7)", result.stderr)
         self.assertEqual((self.home / "claude-args").read_text().split()[0], "remote-control")
-        config = self.home / ".config/josui/channel-mcp.json"
-        control = self.home / ".config/josui/control"
-        self.assertEqual((self.home / "session-args").read_text().split(),
-                         [str(config), "bypassPermissions", str(control)])
-        server = json.loads(config.read_text())["mcpServers"]["matrix"]
-        self.assertEqual([server["command"], *server["args"]],
-                         ["python3", "/usr/local/libexec/josui/matrix-channel.py"])
-        self.assertEqual(server["env"]["JOSUI_MATRIX_ALLOW"], "@rcs_owner:josui.local")
-        self.assertEqual(server["env"]["JOSUI_MATRIX_TOKEN_FILE"], "/etc/josui-matrix/token")
-        # The channel writes commands where channel-session reads them.
-        self.assertEqual(server["env"]["JOSUI_CONTROL_FIFO"], str(control))
+        self.assertEqual((self.home / "agent-args").read_text().split(),
+                         ["run", "--", "--permission-mode", "bypassPermissions"])
 
-    def test_channel_session_skips_onboarding_but_not_trust(self) -> None:
-        self.run_entrypoint(env=self.channel_env())
+    def test_the_bridge_gets_the_matrix_settings_under_its_own_names(self) -> None:
+        self.run_entrypoint(env=self.session_env())
+        env = self.agent_env()
+        self.assertEqual(env["CLAUDE_AGENT_MATRIX_HOMESERVER"], "http://192.0.2.3:6167")
+        self.assertEqual(env["CLAUDE_AGENT_MATRIX_TOKEN_FILE"], "/etc/josui-matrix/token")
+        self.assertEqual(env["CLAUDE_AGENT_MATRIX_ALLOW"], "@alice:example.org")
+        # The old channel's sync position, so texts sent across the upgrade arrive.
+        self.assertEqual(env["CLAUDE_AGENT_MATRIX_STATE"], str(self.home / ".config/josui/matrix-sync"))
+        self.assertNotIn("s3cret-token", (self.home / "agent-env").read_text())
+
+    def test_josui_settings_reach_claude_agent(self) -> None:
+        env = {**self.session_env(), "JOSUI_ANSWER_PERMISSIONS": "1", "JOSUI_MAX_TOOL_CALLS": "900",
+               "JOSUI_MAX_REPEAT": "7"}
+        self.run_entrypoint(env=env)
+        agent = self.agent_env()
+        self.assertEqual((agent["CLAUDE_AGENT_ANSWER_PERMISSIONS"], agent["CLAUDE_AGENT_MAX_TOOL_CALLS"],
+                          agent["CLAUDE_AGENT_MAX_REPEAT"]), ("1", "900", "7"))
+
+    def test_text_session_skips_onboarding_but_not_trust(self) -> None:
+        self.run_entrypoint(env=self.session_env())
         state = json.loads((self.home / ".claude.json").read_text())
         self.assertTrue(state["hasCompletedOnboarding"])
         # Trusting the working directory stays the operator's call.
         self.assertNotIn("projects", state)
         self.assertIn("trentina", state["mcpServers"])
 
-    def test_telemetry_is_off_for_the_server_but_not_the_channel(self) -> None:
-        self.run_entrypoint(env=self.channel_env())
-        self.assertIn("DISABLE_TELEMETRY=1", (self.home / "claude-env").read_text().splitlines())
-        self.assertNotIn("DISABLE_TELEMETRY", (self.home / "session-env").read_text())
-
-    def test_without_a_homeserver_there_is_no_channel(self) -> None:
-        self.run_entrypoint()
-        self.assertFalse((self.home / ".config/josui/channel-mcp.json").exists())
-
-    def test_old_audit_files_are_dropped(self) -> None:
-        audit = self.root / "audit"
-        audit.mkdir()
-        old, new = audit / "audit-2020-01-01.jsonl", audit / "audit-2999-01-01.jsonl"
-        for path in (old, new):
-            path.write_text("{}\n")
-        os.utime(old, (0, 0))
-        self.run_entrypoint()
-        self.assertEqual([p.name for p in audit.iterdir()], [new.name])
+    def test_without_a_homeserver_there_is_no_text_session(self) -> None:
+        agent = self.root / "bin/claude-agent"
+        agent.write_text('#!/bin/bash\ntouch "$HOME/agent-ran"\n')
+        agent.chmod(0o755)
+        self.assertEqual(self.run_entrypoint().returncode, 0)
+        self.assertFalse((self.home / "agent-ran").exists())
 
 
 if __name__ == "__main__":

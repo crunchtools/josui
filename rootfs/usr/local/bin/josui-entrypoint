@@ -6,11 +6,18 @@ set -euo pipefail
 
 config_dir=${JOSUI_CONFIG_DIR:?JOSUI_CONFIG_DIR is not set}
 skills_repo=${JOSUI_SKILLS_DIR:?JOSUI_SKILLS_DIR is not set}
-audit_dir=${JOSUI_AUDIT_DIR:?JOSUI_AUDIT_DIR is not set}
 claude_dir="$HOME/.claude"
 workdir=${JOSUI_WORKDIR:-$HOME/work}
 
 log() { echo "josui: $*" >&2; }
+
+# josui.env keeps the names it has always had; claude-agent reads its own.
+for name in ANSWER_PERMISSIONS MAX_TOOL_CALLS MAX_REPEAT; do
+  value="JOSUI_$name"
+  if [ -n "${!value:-}" ]; then
+    export "CLAUDE_AGENT_$name=${!value}"
+  fi
+done
 
 mkdir -p "$claude_dir/skills" "$claude_dir/hooks" "$workdir"
 
@@ -88,36 +95,25 @@ fi
 
 unset TRENTINA_MCP_TOKEN
 
-# The Matrix channel, when a homeserver is configured. Its MCP config names
-# the server by the exact command the managed allowlist admits. The channel
-# session is interactive, so onboarding is recorded as done; the working
-# directory's trust question is left to the operator (see README).
-# channel-session makes the control FIFO the channel relays built-in
-# commands through.
-channel=
-control="$HOME/.config/josui/control"
+# The text session, when a homeserver is configured: claude-agent run holds an
+# interactive session and starts its Matrix bridge beside it. The bridge keeps
+# the sync position the old channel kept, so texts sent across the upgrade
+# arrive. The session is interactive, so onboarding is recorded as done; the
+# working directory's trust question is left to the operator (see README).
+# Audit files are pruned by claude-agent's audit hook itself.
+session=
 if [ -n "${JOSUI_MATRIX_HOMESERVER:-}" ]; then
-  channel_config="$HOME/.config/josui/channel-mcp.json"
-  mkdir -p "$(dirname "$channel_config")"
-  jq -n --arg hs "$JOSUI_MATRIX_HOMESERVER" \
-    --arg token_file "${JOSUI_MATRIX_TOKEN_FILE:-/etc/josui-matrix/token}" \
-    --arg allow "${JOSUI_MATRIX_ALLOW:-}" --arg control "$control" \
-    '{mcpServers: {matrix: {type: "stdio", command: "python3",
-      args: ["/usr/local/libexec/josui/matrix-channel.py"],
-      env: {JOSUI_MATRIX_HOMESERVER: $hs, JOSUI_MATRIX_TOKEN_FILE: $token_file,
-            JOSUI_MATRIX_ALLOW: $allow, JOSUI_CONTROL_FIFO: $control}}}}' > "$channel_config"
+  export CLAUDE_AGENT_MATRIX_HOMESERVER=$JOSUI_MATRIX_HOMESERVER
+  export CLAUDE_AGENT_MATRIX_TOKEN_FILE=${JOSUI_MATRIX_TOKEN_FILE:-/etc/josui-matrix/token}
+  export CLAUDE_AGENT_MATRIX_ALLOW=${JOSUI_MATRIX_ALLOW:-}
+  export CLAUDE_AGENT_MATRIX_STATE=$HOME/.config/josui/matrix-sync
   state="$HOME/.claude.json"
   [ -s "$state" ] || echo '{}' > "$state"
   tmp=$(mktemp "$HOME/.claude.json.XXXXXX")
   jq '.hasCompletedOnboarding = true' "$state" > "$tmp"
   chmod 0600 "$tmp"
   mv "$tmp" "$state"
-  channel=$channel_config
-fi
-
-# Audit records are kept past the profile's 90-day minimum, then dropped.
-if [ -d "$audit_dir" ]; then
-  find "$audit_dir" -name 'audit-*.jsonl' -mtime "+${JOSUI_AUDIT_RETENTION_DAYS:-120}" -delete || true
+  session=1
 fi
 
 if [ "$#" -gt 0 ]; then
@@ -128,9 +124,7 @@ cd "$workdir"
 # Remote Control redraws a terminal status screen on stdout every second.
 # Under a container runtime that is a line a second into the journal, so
 # stdout is dropped; errors still go to stderr.
-# Telemetry is off for the server. It cannot be off in managed settings:
-# with DISABLE_TELEMETRY set, Claude Code does not load the policy that
-# allows channels, and the channel session skips its channel.
+# Telemetry is off for both Claude processes.
 export DISABLE_TELEMETRY=1
 server_args=(
   remote-control
@@ -139,18 +133,15 @@ server_args=(
   --permission-mode "${JOSUI_PERMISSION_MODE:-acceptEdits}"
   --remote-control-session-name-prefix "${JOSUI_NAME:-josui}"
 )
-if [ -z "$channel" ]; then
+if [ -z "$session" ]; then
   exec claude "${server_args[@]}" > /dev/null
 fi
 
-# With the channel, the Remote Control server and the channel session run
-# side by side. When either ends the container ends, and the unit restarts
-# both.
-libexec=${JOSUI_LIBEXEC:-/usr/local/libexec/josui}
+# With the text session, the Remote Control server and claude-agent run side
+# by side. When either ends the container ends, and the unit restarts both.
 claude "${server_args[@]}" > /dev/null &
 server=$!
-env -u DISABLE_TELEMETRY "$libexec/channel-session" "$channel" \
-  "${JOSUI_PERMISSION_MODE:-acceptEdits}" "$control" &
+claude-agent run -- --permission-mode "${JOSUI_PERMISSION_MODE:-acceptEdits}" &
 session=$!
 trap 'kill "$server" "$session" 2>/dev/null' TERM INT
 status=0
