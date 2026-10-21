@@ -15,10 +15,9 @@ same senders.
 A text that is one of the built-in commands in COMMANDS never reaches
 Claude: only the session's input box runs a built-in. It goes, checked,
 to the control FIFO in JOSUI_CONTROL_FIFO, where channel-session types it
-into the session, and the channel acknowledges it itself. Every other
-text, skills included, is a channel event as before. The command's result
-is texted back too: Claude Code writes it to the session transcript, and
-Results finds it there.
+into the session. Every other text, skills included, is a channel event
+as before. The command's result is the only text back: Claude Code writes
+it to the session transcript, and Results finds it there.
 
 Standard library only; the homeserver is plaintext on an internal network.
 """
@@ -292,9 +291,7 @@ class Channel:
             return True
         line = f"/{name} {args}".rstrip()
         pending = self.results.expect(name, room_id)
-        if self.relay(line):
-            self.tell(room_id, f"Sent {line}, result to follow")
-        else:
+        if not self.relay(line):
             self.results.forget(pending)
             self.tell(room_id, NOT_READY)
         return True

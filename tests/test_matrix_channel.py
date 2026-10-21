@@ -158,7 +158,21 @@ class MatrixChannelTest(unittest.TestCase):
         os.mkfifo(self.fifo, 0o600)
         fd = os.open(self.fifo, os.O_RDWR | os.O_NONBLOCK)
         self.addCleanup(os.close, fd)
+        self.control_fd = fd
         return fd
+
+    def relayed(self, body: str) -> str:
+        """Send the owner's text and return the command line it put on the FIFO."""
+        self.hs.batches.put(message(OWNER, body))
+        line = b""
+        end = time.time() + 5
+        while not line.endswith(b"\n") and time.time() < end:
+            try:
+                line += os.read(self.control_fd, 4096)
+            except BlockingIOError:
+                time.sleep(0.05)
+        self.assertTrue(line.endswith(b"\n"), f"{body!r} was not relayed")
+        return line.decode().rstrip("\n")
 
     def text_back(self, body: str) -> str:
         """Send the owner's text and return what the channel texts back."""
@@ -257,22 +271,21 @@ class MatrixChannelTest(unittest.TestCase):
         self.assertTrue(self.wait_for(lambda: (self.root / "sync").exists()))
 
     def test_builtin_command_goes_to_the_fifo_not_the_session(self) -> None:
-        fd = self.open_fifo()
+        self.open_fifo()
         self.start(control=True)
         # Phone keyboards capitalize and punctuate.
-        self.assertEqual(self.text_back("/Clear."), "Sent /clear, result to follow")
-        self.assertEqual(os.read(fd, 4096), b"/clear\n")
+        self.assertEqual(self.relayed("/Clear."), "/clear")
         self.assertIsNone(self.read(timeout=1))
+        # No ack: the result is the first text back.
+        self.assertEqual(self.hs.requests, [])
 
     def test_command_arguments_are_checked(self) -> None:
-        fd = self.open_fifo()
+        self.open_fifo()
         self.start(control=True)
         self.assertEqual(self.text_back("/model"), "Usage: /model <alias or id>")
         self.assertEqual(self.text_back("/fast maybe"), "Usage: /fast on|off")
-        self.assertEqual(self.text_back("/effort High"), "Sent /effort high, result to follow")
-        self.assertEqual(self.text_back("/compact keep\nthe RT  context"),
-                         "Sent /compact keep the RT context, result to follow")
-        self.assertEqual(os.read(fd, 4096), b"/effort high\n/compact keep the RT context\n")
+        self.assertEqual(self.relayed("/effort High"), "/effort high")
+        self.assertEqual(self.relayed("/compact keep\nthe RT  context"), "/compact keep the RT context")
         self.assertIsNone(self.read(timeout=1))
 
     def test_help_is_answered_by_the_channel(self) -> None:
@@ -301,7 +314,7 @@ class MatrixChannelTest(unittest.TestCase):
         self.open_fifo()
         self.transcript({"type": "user", "message": {"content": "earlier"}})
         self.start(control=True)
-        self.text_back("/model sonnet")
+        self.relayed("/model sonnet")
         # Other sessions write to the same directory.
         self.transcript({"type": "system", "commandRun": {"command": "model"},
                          "content": "<local-command-stdout>someone else</local-command-stdout>"},
@@ -311,13 +324,13 @@ class MatrixChannelTest(unittest.TestCase):
             {"type": "user", "message": {"content":
                 "<local-command-stdout>Set model to \x1b[1mSonnet 5.5\x1b[22m</local-command-stdout>"}},
         )
-        self.assertEqual(self.texts(2)[1], "/model: Set model to Sonnet 5.5")
+        self.assertEqual(self.texts(1), ["/model: Set model to Sonnet 5.5"])
         self.assertIsNone(self.read(timeout=1))
 
     def test_compact_texts_the_token_counts_and_summary(self) -> None:
         self.open_fifo()
         self.start(control=True)
-        self.text_back("/compact")
+        self.relayed("/compact")
         summary = "This session is being continued.\n\nSummary:\n1. Intent: " + "x" * 3100
         self.transcript(
             {"type": "system", "subtype": "compact_boundary",
@@ -327,26 +340,26 @@ class MatrixChannelTest(unittest.TestCase):
             {"type": "user", "message": {"content":
                 "<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>"}},
         )
-        texts = self.texts(3)
-        self.assertEqual(texts[1], "Compacted 50,160 → 6,588 tokens in 13s.")
-        self.assertTrue(texts[2].startswith("1. Intent: xxx"), texts[2][:40])
-        self.assertTrue(texts[2].endswith("… (trimmed, 3,111 chars)"), texts[2][-40:])
+        texts = self.texts(2)
+        self.assertEqual(texts[0], "Compacted 50,160 → 6,588 tokens in 13s.")
+        self.assertTrue(texts[1].startswith("1. Intent: xxx"), texts[1][:40])
+        self.assertTrue(texts[1].endswith("… (trimmed, 3,111 chars)"), texts[1][-40:])
 
     def test_clear_reports_done_from_its_new_transcript(self) -> None:
         self.open_fifo()
         self.transcript({"type": "user", "message": {"content": "old session"}})
         self.start(control=True)
-        self.text_back("/clear")
+        self.relayed("/clear")
         self.session(OTHER)
         self.transcript({"type": "system", "subtype": "local_command", "commandRun": {"command": "clear"},
                          "content": "<local-command-stdout></local-command-stdout>"}, session=OTHER)
-        self.assertEqual(self.texts(2)[1], "/clear: done")
+        self.assertEqual(self.texts(1), ["/clear: done"])
 
     def test_command_with_no_result_says_so(self) -> None:
         self.open_fifo()
         self.start(control=True, JOSUI_RESULT_TIMEOUT="1")
-        self.text_back("/fast on")
-        self.assertEqual(self.texts(2)[1], "No result from /fast within 1 min.")
+        self.relayed("/fast on")
+        self.assertEqual(self.texts(1), ["No result from /fast within 1 min."])
 
     def test_bad_session_file_reads_no_transcript(self) -> None:
         sessions = self.claude_dir / f"sessions/{os.getpid()}.json"
@@ -360,15 +373,15 @@ class MatrixChannelTest(unittest.TestCase):
                 sessions.unlink()
             else:
                 sessions.write_text(contents)
-            self.text_back("/fast on")
+            self.relayed("/fast on")
             self.transcript(stdout, session=OTHER)
-            self.assertEqual(self.texts(2 * count + 2)[-1], "No result from /fast within 1 min.")
+            self.assertEqual(self.texts(count + 1)[-1], "No result from /fast within 1 min.")
 
     def test_queued_commands_get_their_own_results_in_order(self) -> None:
         self.open_fifo()
         self.start(control=True)
-        self.text_back("/effort high")
-        self.text_back("/fast off")
+        self.relayed("/effort high")
+        self.relayed("/fast off")
 
         def ran(name: str, output: str) -> list[dict]:
             stdout = f"<local-command-stdout>{output}</local-command-stdout>"
@@ -380,11 +393,11 @@ class MatrixChannelTest(unittest.TestCase):
         self.transcript(*ran("effort", "")[:1], raw="")
         self.transcript(raw=line[:20])
         time.sleep(1.5)
-        self.assertEqual(len(self.hs.requests), 2)
+        self.assertEqual(self.hs.requests, [])
         self.transcript(*ran("fast", "Fast mode OFF"), raw=line[20:])
-        self.assertEqual(self.texts(4)[2:], ["/effort: Set effort to high", "/fast: Fast mode OFF"])
+        self.assertEqual(self.texts(2), ["/effort: Set effort to high", "/fast: Fast mode OFF"])
         time.sleep(1.5)
-        self.assertEqual(len(self.hs.requests), 4)
+        self.assertEqual(len(self.hs.requests), 2)
 
 
 if __name__ == "__main__":

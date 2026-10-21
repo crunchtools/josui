@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-20
+
+### Changed
+
+- No ack for a command by text. The channel no longer texts "Sent /clear,
+  result to follow"; the command's result (or the 15-minute no-result
+  notice) is the only text back.
+
 ## [0.4.0] - 2026-10-19
 
 ### Added
