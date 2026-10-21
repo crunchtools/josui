@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-21
+
+### Fixed
+
+- claude-agent 0.2.1, pinned like claude-code: the Matrix bridge no longer
+  answers Trentina's "your message was not sent" notices as if they were
+  texts from Scott.
+
 ## [0.5.0] - 2026-10-21
 
 ### Changed

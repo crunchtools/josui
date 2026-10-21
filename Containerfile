@@ -16,8 +16,10 @@ FROM registry.access.redhat.com/ubi10/ubi-minimal@sha256:bcecd3e74c9d03eb1a596c6
 LABEL maintainer="fatherlinux <scott.mccarty@crunchtools.com>"
 LABEL description="Josui - Claude Code packaged as a crunchtools autonomous agent"
 
-# A new Claude Code is tested before Josui runs on it: bump by hand.
+# A new Claude Code or claude-agent is tested before Josui runs on it: bump
+# by hand.
 ARG CLAUDE_CODE_VERSION=2.1.304
+ARG CLAUDE_AGENT_VERSION=0.2.1
 
 # Anthropic's signed repository for claude-code and crunchtools' for
 # claude-agent, keys imported up front (constitution XIV: repository
@@ -41,7 +43,8 @@ RUN microdnf install -y --setopt=install_weak_deps=0 --nodocs \
         ca-certificates git-core openssh-clients jq python3 \
         nodejs nodejs-full-i18n npm \
         "claude-code-${CLAUDE_CODE_VERSION}" \
-        claude-agent claude-agent-matrix claude-agent-trentina && \
+        "claude-agent-${CLAUDE_AGENT_VERSION}" "claude-agent-matrix-${CLAUDE_AGENT_VERSION}" \
+        "claude-agent-trentina-${CLAUDE_AGENT_VERSION}" && \
     microdnf clean all && \
     claude --version && claude-agent --version
 
