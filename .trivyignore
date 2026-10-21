@@ -1,23 +1,2 @@
 # One entry per accepted finding, each with why it is unreachable or blocked
 # upstream and when to look again.
-
-# gh 2.102.0 (the newest release when this was written) is built with Go
-# 1.27.1 and golang.org/x/net 0.58.0. All three findings are denial of
-# service in Go's HTTP and TLS code, per Trivy's titles:
-#
-#   HIGH  CVE-2026-78667  stdlib 1.27.1         DoS via crafted HTTP Range headers
-#   HIGH  CVE-2026-78669  stdlib, x/net 0.58.0  DoS via excessive HTTP/2 SETTINGS
-#   HIGH  CVE-2026-97031  stdlib 1.27.1         DoS in crypto/tls via ECH outer extensions
-#
-# Not fixable here: the fix is a rebuild of gh on Go 1.27.2 / x/net 0.60.0,
-# which is upstream's to ship. Nothing newer than 2.102.0 exists to move to.
-#
-# Limited reach: gh is a client run for one command at a time, never a
-# listener, and this container's only route out is the gateway's allowlist.
-# The worst case for each is one gh invocation that hangs or dies.
-#
-# Revisit: on every GH_VERSION bump. Remove an entry as soon as a gh release
-# clears it; the scan fails again if a bump brings new findings.
-CVE-2026-78667
-CVE-2026-78669
-CVE-2026-97031

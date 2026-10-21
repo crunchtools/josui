@@ -3,9 +3,9 @@
 #
 # This repo ships a Containerfile and workflows, with no language-level
 # manifest, so the two things that go stale silently are the base image
-# pin and the `uses:` action pins. CLAUDE_CODE_VERSION and GH_VERSION in the
-# Containerfile are bumped by hand: a new Claude Code is tested before Josui
-# runs on it.
+# pin and the `uses:` action pins. CLAUDE_CODE_VERSION in the Containerfile
+# is bumped by hand: a new Claude Code is tested before Josui runs on it. The
+# claude-agent packages come from crunchtools' repository at build time.
 
 version: 2
 updates:

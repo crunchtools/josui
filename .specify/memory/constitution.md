@@ -33,18 +33,18 @@ Single agent behind the gateway. The gateway is the deterministic enforcer
 and holds the quarantined reader; Josui never fetches from the web itself
 (`WebFetch` and `WebSearch` are denied in its settings). Attended mode: the
 agent acts only when the operator starts it, either by opening a conversation
-over Remote Control, or, with the Matrix channel on, by texting from the
-operator's phone. That second path is the channel session. It is not on
-Remote Control, and it takes a turn only for a message from a sender in
-`JOSUI_MATRIX_ALLOW`, the operator's own number, which reaches it through
-Trentina's RCS bridge, judged.
+over Remote Control, or, with the text session on, by texting from the
+operator's phone. That second path is claude-agent's session supervisor and
+Matrix bridge. It is not on Remote Control, and it takes a turn only for a
+text from a sender in `JOSUI_MATRIX_ALLOW`, the operator's own number, in a
+one-to-one room, which reaches it through Trentina's RCS bridge, judged.
 
 ## Layer 2 — MCP Server Governance
 
-`/etc/claude-code/managed-settings.json` allows two MCP servers and turns off
-claude.ai connectors: `trentina` by name, and the Matrix channel by its exact
-command (`python3 /usr/local/libexec/josui/matrix-channel.py`), a stdio server
-shipped in the image that talks only to the agent's own homeserver. Which backends and tools that seat holds,
+The `claude-agent-trentina` package's managed settings allow one MCP server,
+`trentina`, by name, and turn off claude.ai connectors. The Matrix bridge is
+not an MCP server; it talks only to the agent's own homeserver and to the
+supervisor's local socket. Which backends and tools that seat holds,
 their scorecards and risk tiers are the gateway's configuration and are not
 restated here. The entrypoint writes that one server into Claude Code's state
 from `TRENTINA_MCP_URL` and `TRENTINA_MCP_TOKEN` at every start, replacing
@@ -55,8 +55,9 @@ whatever was there.
 - **Image:** `quay.io/crunchtools/josui` and `ghcr.io/crunchtools/josui`,
   public. It holds tooling only; identity and credentials are mounted.
 - **Base:** UBI 10 Minimal, pinned by digest. Claude Code
-  (`CLAUDE_CODE_VERSION`) is pinned in the
-  Containerfile and bumped by hand, because a new Claude Code is tried before
+  (`CLAUDE_CODE_VERSION`) comes from Anthropic's signed repository, pinned in
+  the Containerfile and bumped by hand; the claude-agent packages come from
+  crunchtools' signed repository, because a new Claude Code is tried before
   Josui runs on it. `DISABLE_AUTOUPDATER=1`. Telemetry and error reporting are off
   (`DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING`); the broader
   `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is not set, because it also
@@ -75,14 +76,14 @@ whatever was there.
 
 ## Layer 4 — Runtime Security & Behavioral Controls
 
-- **Circuit breakers** (`hooks.py breaker`): 500 tool calls per conversation and 5
+- **Circuit breakers** (claude-agent's `hooks.py breaker`): 500 tool calls per conversation and 5
   identical calls in a row. The profile's default of 50 calls is a chat
   agent's budget; one code change here is routinely a few hundred. A tripped
   conversation is denied every further call and the trip is audited. A
   breaker that cannot read its state denies.
 - **Token budget:** the claude.ai subscription's own limits; there is no API
   key to overspend.
-- **Audit** (`hooks.py audit`): the profile's record for every tool call, with
+- **Audit** (claude-agent's `hooks.py audit`): the profile's record for every tool call, with
   credential-shaped values replaced and long values cut, kept 120 days.
 - **Human in the loop:** sessions start in `acceptEdits` by default. File
   edits inside the mounts proceed; most shell commands wait for the
@@ -92,7 +93,7 @@ whatever was there.
   limits. That is a deviation from the profile's approval gate and is the
   operator's to take. The app sets its own mode on a session it opens and
   so undoes the setting there; a deployment that has taken the deviation
-  holds it with the image's `allow-hook.sh`, turned on with
+  holds it with claude-agent's `allow-hook.sh`, turned on with
   `JOSUI_ANSWER_PERMISSIONS=1`, which answers `permissionDecision: allow`. That hook is the same deviation and no wider
   one: it runs only inside this container, a deny from a rule or another
   hook still wins, and it must leave `AskUserQuestion` and `ExitPlanMode`
