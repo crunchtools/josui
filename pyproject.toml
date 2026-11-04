@@ -1,3 +1,19 @@
+# The [project] table exists so `uv lock` can pin the gate's own tools; this
+# repo is not a package, which is what `package = false` says. Without a
+# lockfile that names mypy and pytest the gate exits 2 (python-sdlc,
+# need_lock_dep) rather than reporting a pass it never ran.
+[project]
+name = "josui"
+version = "0"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = ["mypy>=1.14", "pytest>=8.3"]
+
 # Lint config for the hooks and their tests. This repo is not a Python
 # package; there is nothing to build or install.
 
@@ -14,3 +30,15 @@ max-statements = 50
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10
+
+# Loose files, not a package, so mypy is pointed at them by path.
+[tool.mypy]
+files = ["tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.sdlc.push]
+# No in-repo Semgrep rules: the check exits 2 when .semgrep is absent rather
+# than scanning nothing and calling it a pass.
+skip = ["semgrep"]
