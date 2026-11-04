@@ -147,12 +147,15 @@ class EntrypointTest(unittest.TestCase):
 
     def session_env(self) -> dict[str, str]:
         agent = self.root / "bin/claude-agent"
-        agent.write_text('#!/bin/bash\nprintf "%s\\n" "$@" > "$HOME/agent-args"\n'
-                         'env > "$HOME/agent-env"\nexit 7\n')
+        agent.write_text(
+            '#!/bin/bash\nprintf "%s\\n" "$@" > "$HOME/agent-args"\nenv > "$HOME/agent-env"\nexit 7\n'
+        )
         agent.chmod(0o755)
         claude = self.root / "bin/claude"
-        claude.write_text('#!/bin/bash\nprintf "%s\\n" "$@" > "$HOME/claude-args"\n'
-                          'env > "$HOME/claude-env"\nexec sleep 30\n')
+        claude.write_text(
+            '#!/bin/bash\nprintf "%s\\n" "$@" > "$HOME/claude-args"\n'
+            'env > "$HOME/claude-env"\nexec sleep 30\n'
+        )
         return {
             **self.env,
             "JOSUI_MATRIX_HOMESERVER": "http://192.0.2.3:6167",
@@ -171,8 +174,10 @@ class EntrypointTest(unittest.TestCase):
         self.assertEqual(result.returncode, 7, result.stderr)
         self.assertIn("a claude process ended (status 7)", result.stderr)
         self.assertEqual((self.home / "claude-args").read_text().split()[0], "remote-control")
-        self.assertEqual((self.home / "agent-args").read_text().split(),
-                         ["run", "--", "--permission-mode", "bypassPermissions"])
+        self.assertEqual(
+            (self.home / "agent-args").read_text().split(),
+            ["run", "--", "--permission-mode", "bypassPermissions"],
+        )
 
     def test_the_bridge_gets_the_matrix_settings_under_its_own_names(self) -> None:
         self.run_entrypoint(env=self.session_env())
@@ -185,12 +190,22 @@ class EntrypointTest(unittest.TestCase):
         self.assertNotIn("s3cret-token", (self.home / "agent-env").read_text())
 
     def test_josui_settings_reach_claude_agent(self) -> None:
-        env = {**self.session_env(), "JOSUI_ANSWER_PERMISSIONS": "1", "JOSUI_MAX_TOOL_CALLS": "900",
-               "JOSUI_MAX_REPEAT": "7"}
+        env = {
+            **self.session_env(),
+            "JOSUI_ANSWER_PERMISSIONS": "1",
+            "JOSUI_MAX_TOOL_CALLS": "900",
+            "JOSUI_MAX_REPEAT": "7",
+        }
         self.run_entrypoint(env=env)
         agent = self.agent_env()
-        self.assertEqual((agent["CLAUDE_AGENT_ANSWER_PERMISSIONS"], agent["CLAUDE_AGENT_MAX_TOOL_CALLS"],
-                          agent["CLAUDE_AGENT_MAX_REPEAT"]), ("1", "900", "7"))
+        self.assertEqual(
+            (
+                agent["CLAUDE_AGENT_ANSWER_PERMISSIONS"],
+                agent["CLAUDE_AGENT_MAX_TOOL_CALLS"],
+                agent["CLAUDE_AGENT_MAX_REPEAT"],
+            ),
+            ("1", "900", "7"),
+        )
 
     def test_text_session_skips_onboarding_but_not_trust(self) -> None:
         self.run_entrypoint(env=self.session_env())
