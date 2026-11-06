@@ -172,7 +172,7 @@ class EntrypointTest(unittest.TestCase):
         result = self.run_entrypoint(env=self.session_env())
         # The stand-in claude-agent exits 7 at once; the server is stopped too.
         self.assertEqual(result.returncode, 7, result.stderr)
-        self.assertIn("a claude process ended (status 7)", result.stderr)
+        self.assertIn("a supervised process ended (status 7)", result.stderr)
         self.assertEqual((self.home / "claude-args").read_text().split()[0], "remote-control")
         self.assertEqual(
             (self.home / "agent-args").read_text().split(),
@@ -214,6 +214,97 @@ class EntrypointTest(unittest.TestCase):
         # Trusting the working directory stays the operator's call.
         self.assertNotIn("projects", state)
         self.assertIn("trentina", state["mcpServers"])
+
+    # The client egress watchdog. The proxy in these tests is 192.0.2.2:8021,
+    # which /proc/net/tcp writes as 020200C0:1F55.
+    PROXY = "http://192.0.2.2:8021"
+    PROXY_HEX = "020200C0:1F55"
+    NET_TCP_HEADER = (
+        "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"
+    )
+
+    def net_tcp(self, *rows: str) -> str:
+        path = self.root / "net-tcp"
+        path.write_text(self.NET_TCP_HEADER + "".join(f"   0: 0100007F:A1B2 {row}\n" for row in rows))
+        return str(path)
+
+    def claude_that_runs_for(self, seconds: int) -> None:
+        claude = self.root / "bin/claude"
+        claude.write_text(f'#!/bin/bash\nprintf "%s\\n" "$@" > "$HOME/claude-args"\nexec sleep {seconds}\n')
+        claude.chmod(0o755)
+
+    def test_debug_file_is_asked_for_and_emptied_when_there_is_an_audit_dir(self) -> None:
+        audit = self.root / "audit"
+        audit.mkdir()
+        stale = audit / "remote-control.log"
+        stale.write_text("from the last container\n")
+        result = self.run_entrypoint(env={**self.env, "CLAUDE_AGENT_AUDIT_DIR": str(audit)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        args = (self.home / "claude-args").read_text().split()
+        self.assertEqual(args[args.index("--debug-file") + 1], str(stale))
+        # The session name prefix stays last, and the stale log is gone.
+        self.assertEqual(args[-1], "josui")
+        self.assertEqual(stale.read_text(), "")
+
+    def test_no_debug_file_when_there_is_nowhere_to_put_it(self) -> None:
+        self.assertEqual(self.run_entrypoint().returncode, 0)
+        self.assertNotIn("--debug-file", (self.home / "claude-args").read_text())
+
+    def test_nothing_connected_to_the_egress_stops_the_container(self) -> None:
+        self.claude_that_runs_for(30)
+        env = {
+            **self.env,
+            "HTTPS_PROXY": self.PROXY,
+            "JOSUI_NET_TCP": self.net_tcp("020D590A:1F53 01"),  # the gateway's MCP port, not the egress
+            "JOSUI_WATCHDOG_INTERVAL": "1",
+            "JOSUI_WATCHDOG_GRACE": "1",
+        }
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("Remote Control is not connected", result.stderr)
+
+    def test_an_established_egress_connection_keeps_the_container_running(self) -> None:
+        self.claude_that_runs_for(3)
+        env = {
+            **self.env,
+            "HTTPS_PROXY": self.PROXY,
+            "JOSUI_NET_TCP": self.net_tcp(f"{self.PROXY_HEX} 01"),
+            "JOSUI_WATCHDOG_INTERVAL": "1",
+            "JOSUI_WATCHDOG_GRACE": "1",
+        }
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("client egress", result.stderr)
+
+    def test_a_connection_that_is_not_established_does_not_count(self) -> None:
+        self.claude_that_runs_for(30)
+        env = {
+            **self.env,
+            "HTTPS_PROXY": self.PROXY,
+            "JOSUI_NET_TCP": self.net_tcp(f"{self.PROXY_HEX} 06"),  # TIME_WAIT
+            "JOSUI_WATCHDOG_INTERVAL": "1",
+            "JOSUI_WATCHDOG_GRACE": "1",
+        }
+        self.assertEqual(self.run_entrypoint(env=env).returncode, 1)
+
+    def test_without_a_proxy_there_is_no_watchdog(self) -> None:
+        self.claude_that_runs_for(2)
+        env = {
+            **self.env,
+            "JOSUI_NET_TCP": self.net_tcp(),
+            "JOSUI_WATCHDOG_INTERVAL": "1",
+            "JOSUI_WATCHDOG_GRACE": "1",
+        }
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("client egress", result.stderr)
+
+    def test_a_proxy_that_is_not_an_address_is_reported_and_skipped(self) -> None:
+        self.claude_that_runs_for(2)
+        env = {**self.env, "HTTPS_PROXY": "http://gateway.internal:8021", "JOSUI_WATCHDOG_INTERVAL": "1"}
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("not a plain address", result.stderr)
 
     def test_without_a_homeserver_there_is_no_text_session(self) -> None:
         agent = self.root / "bin/claude-agent"
