@@ -166,32 +166,12 @@ connectivity failure at all.
 
 ## developer
 
-`Containerfile.dev` builds `quay.io/crunchtools/developer`, which runs as
-developer1-3 on gloval. It is NOT a Josui: this agent builds the fleet, Josui
-Prime operates it, and they have different Trentina profiles, different
-identities and different reach. What they share is this repo's entrypoint and
-mount contract. On top of those it has python 3.14, `uv`,
-node, `pre-commit`, tmux and a nested container engine, so an agent in it can
-run a repo's real gates rather than wait for CI to render them.
-
-It is **less contained than this image, deliberately**, and by exactly this
-much, measured on gloval rather than assumed:
-
-| Setting | Why |
-|---------|-----|
-| `--device /dev/fuse` | the nested engine's storage driver |
-| `--cap-drop=all --cap-add=setuid,setgid,sys_chroot,chown,setfcap` | `--cap-drop=all` alone fails at `newuidmap`; setuid and setgid get past it and then fail unpacking a layer; `sys_chroot` fixes that; `chown` and `setfcap` are kept for layers that carry either. 5 of podman's 11 default capabilities: no `SYS_ADMIN`, no `DAC_OVERRIDE`, not privileged |
-| `--security-opt label=disable` | under SELinux enforcing the nested pull works and the nested run fails with `crun: read from sync socket`. Set on these containers only; every other container on the host keeps its confinement |
-| nested storage on a volume | the root filesystem still stays `--read-only`, with tmpfs on `/tmp`, `/var/tmp` and `/run` |
-
-Its base is `quay.io/podman/stable`, not UBI: UBI 10 fails a nested `podman
-run` with "mount `proc` to `proc`: Operation not permitted", measured in
-[gha-runner](https://github.com/crunchtools/gha-runner)'s Containerfile.
-
-So a dev copy gets its own Trentina profile, mounts no production data, and
-holds nothing a production agent holds. uid 1000 stays the base image's
-`podman` user, because its subuid layout is what makes nesting work; `HOME`
-is `/home/podman`.
+The development agent image that used to be built here as `Containerfile.dev`
+now lives in its own repository,
+[crunchtools/developer](https://github.com/crunchtools/developer), and still
+publishes as `quay.io/crunchtools/developer`. It began from this image's
+entrypoint and mount contract and is expected to diverge from them; a repo
+called josui was the wrong home for an agent that is deliberately not one.
 
 ## Development
 

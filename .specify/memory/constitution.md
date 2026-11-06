@@ -1,6 +1,6 @@
 # josui Constitution
 
-> **Version:** 1.4.0
+> **Version:** 1.5.0
 > **Ratified:** 2026-10-11
 > **Status:** Active
 > **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.31.0
@@ -80,41 +80,12 @@ whatever was there.
   run as root, and two owners in one git checkout break it for both. The
   process holds no capabilities on either side of the mapping.
 
-### The development image (`developer`)
+### The development image
 
-`Containerfile.dev` builds a second image for agents that develop rather than
-operate: `quay.io/crunchtools/developer`, which runs as developer1-3 on gloval.
-It is NOT a Josui: it has its own Trentina profile, its own identity and no
-production data, and it is published under its own name. What it shares with
-this image is the entrypoint and mount contract, plus python 3.14, `uv`, node,
-`pre-commit`, tmux and a nested container engine, so an agent can render a
-repo's own gates instead of waiting for CI. The sharing is expected to end; the
-build then moves to `crunchtools/developer` and the image name does not change.
-
-- **Base:** `quay.io/podman/stable`, pinned by digest, the same digest
-  gha-runner runs. Not UBI: UBI 10 fails a nested `podman run` with "mount
-  `proc` to `proc`: Operation not permitted" (measured, gha-runner's
-  Containerfile).
-- **Trivy** blocks on CRITICAL and HIGH as it does for the production image.
-  It does **not** cover this image's OS layer: Trivy reports `Unsupported os
-  family="fedora"` and scans language packages only. `dnf -y upgrade` in the
-  Containerfile plus the weekly `parent-image-updated` rebuild is the OS-layer
-  control, and it is the only one.
-- **Runtime:** UID 1000 mapped to an **unprivileged** host range — not to
-  host root, unlike the production instance — `--read-only` with tmpfs on
-  `/tmp`, `/var/tmp` and `/run`, the nested engine's storage on a volume of
-  its own, `--cap-drop=all --cap-add=setuid,setgid,sys_chroot,chown,setfcap`,
-  an internal network with `--dns=none`, and memory and pid limits. It does
-  **not** set `no-new-privileges`: `newuidmap` acquires its privilege through
-  a file capability, and that option blocks it.
-- **Capability set, measured on gloval 2026-11-05 (RT#1556):** `--cap-drop=all`
-  alone fails at `newuidmap`; `setuid` and `setgid` get past it and fail
-  unpacking a layer; `sys_chroot` is the one that fixes it; `chown` and
-  `setfcap` are kept because a real layer carrying a file owner or a file
-  capability needs them. Five of podman's eleven default capabilities, with no
-  `SYS_ADMIN`, no `DAC_OVERRIDE`, no `MKNOD` and no `--privileged`.
-- **No production data.** No `/srv` service tree is mounted; repositories are
-  cloned through the gateway's git route into the container's own volume.
+Built here until 2026-11-06 as `Containerfile.dev`, now
+[crunchtools/developer](https://github.com/crunchtools/developer) with its own
+constitution. It is a different agent: its own Trentina profile, its own
+identity, no production data, and deviations this image does not take.
 
 ## Layer 4 — Runtime Security & Behavioral Controls
 
@@ -229,3 +200,4 @@ the host's monitoring configuration.
 | 1.2.0 | 2026-11-05 | The development image (`developer`): its base, its measured five-capability set, its unprivileged UID mapping, and the recorded `label=disable` deviation with what replaces SELinux and what is lost. Trivy does not scan Fedora OS packages; `dnf -y upgrade` plus the weekly rebuild is that layer's only control. RT#1556 |
 | 1.3.0 | 2026-11-06 | Liveness: Remote Control polls and its debug file is quiet while idle, so there is no local signal for bridge liveness; the 0.6.0 socket watchdog is removed and a session that does not appear is diagnosed from the --debug-file. RT#1556 |
 | 1.4.0 | 2026-11-06 | The development image is published as `developer`, not `josui-dev`: it is a different agent from Josui Prime, with its own profile, identity and reach, and the name said otherwise. RT#1556 |
+| 1.5.0 | 2026-11-06 | The development image moved to crunchtools/developer, with its own constitution; what is left here is a pointer. RT#1556 |
