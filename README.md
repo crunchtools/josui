@@ -115,8 +115,7 @@ question answered once: `podman exec -it <service> claude-agent attach --rw`.
 | `JOSUI_MATRIX_TOKEN_FILE` | `/etc/josui-matrix/token` | The agent account's access token, in a read-only mount. |
 | `JOSUI_MATRIX_ALLOW` | unset | Comma list of the exact Matrix IDs whose messages reach the session. Empty lets nothing through. |
 | `JOSUI_MAX_TOOL_CALLS`, `JOSUI_MAX_REPEAT` | `500`, `5` | Circuit breakers. |
-| `JOSUI_WATCHDOG_GRACE`, `JOSUI_WATCHDOG_INTERVAL` | `300`, `60` | Seconds with nothing connected to `HTTPS_PROXY` before the container ends so the unit restarts it, and how often that is checked. Skipped entirely when `HTTPS_PROXY` is unset. |
-| `JOSUI_DEBUG_FILE` | audit dir + `/remote-control.log` | Remote Control's `--debug-file`. Emptied at each start, truncated at `JOSUI_DEBUG_MAX_BYTES` (64 MiB). |
+| `JOSUI_DEBUG_FILE` | audit dir + `/remote-control.log` | Remote Control's `--debug-file`, emptied at each start. Read it first when a session does not appear. |
 | `JOSUI_TMUX` | unset | `1` starts a detached tmux session `dev` holding an interactive Claude Code. See [Attaching](#attaching). |
 | `JOSUI_AUDIT_RETENTION_DAYS` | `120` | Age at which an audit file is deleted at start. |
 | `JOSUI_AUDIT_DIR` | set in the image | Where audit files are written; mount a volume there. |
@@ -139,17 +138,31 @@ supervisor set. The tmux session is deliberately not watched: quitting your
 own shell must not end the container. Quitting Claude Code in window 0 leaves
 the pane for `prefix + :respawn-pane`.
 
-## What the agent cannot see go wrong
+## When no session appears
 
-Remote Control can keep running with no connection at all. It happened on
-2026-11-05: the gateway restarted, the client never came back, and the
-container looked healthy for nineteen hours -- the process was alive, its
-stdout goes to `/dev/null`, and `Restart=always` only fires when something
-exits. So the entrypoint watches `/proc/net/tcp` for an ESTABLISHED
-connection to the client egress and ends the container when there has been
-none for `JOSUI_WATCHDOG_GRACE`. Session failures that are not visible from
-outside -- a workdir that is a git checkout makes Anthropic refuse every
-session with an HTTP 400 -- land in the `--debug-file`.
+Read the `--debug-file` first. Nothing else in the container will tell you,
+and two of the three failures found so far were invisible from outside:
+
+- A **work item the server has archived.** On 2026-11-05 Josui Prime showed no
+  session for a day. The container was healthy and polling the whole time; the
+  debug file said a work item created days earlier was picked up and ended by
+  the server with `reason=archived`, after which the bridge returned to idle
+  with no session. Restarting retries the same item and fails the same way.
+- A **workdir that is a git checkout**, which makes Remote Control register a
+  `git_repo_url` and Anthropic refuse every session with an HTTP 400 unless the
+  Claude GitHub App can see that repository.
+- A **stale MCP client**, after the gateway restarts: the gateway logs "client
+  predates a gateway restart" and the agent keeps running without its tools.
+  Restart the container.
+
+What **not** to build: a watchdog that samples `/proc/net/tcp` for a
+connection to the proxy. 0.6.0 shipped one and 0.7.0 removed it. Remote
+Control *polls* -- a connection roughly every thirty to two hundred seconds,
+gone in about a second -- so a healthy idle container shows no connection at
+almost any instant (measured: one hit in ten samples over two minutes). The
+debug file does not grow while idle either. There is no cheap local signal for
+"the bridge is alive", and the one failure actually observed was not a
+connectivity failure at all.
 
 ## josui-dev
 
