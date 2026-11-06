@@ -190,6 +190,44 @@ start_tmux_session() {
   log "tmux session 'dev' is up: podman exec -it <service> tmux attach -t dev"
 }
 
+# An ssh client and a key, for the one failure nothing else covers: the
+# gateway itself. Every tool this agent has arrives through the Trentina
+# gateway, so when the gateway is down the agent has no tools at all -- not
+# even the systemd tools that would restart it. This is the way back in.
+#
+# The image supplies the mechanism only. The key, the account and the host to
+# reach are in the read-only identity mount, because they are deployment
+# facts: a laptop copy of this image with nothing mounted gets no ssh
+# identity and behaves exactly as before. Nothing listens in the container;
+# this is outbound, and there is still no sshd here.
+install_ssh_identity() {
+  local src="$config_dir/ssh" dest="$HOME/.ssh" name
+  local ssh=${JOSUI_SSH_CMD:-ssh}
+  [ -d "$src" ] || return 0
+  if ! command -v "$ssh" > /dev/null 2>&1; then
+    log "$src is mounted but there is no $ssh in this image"
+    return 0
+  fi
+  mkdir -p "$dest"
+  chmod 0700 "$dest"
+  # Copied, not pointed at: ssh refuses a private key that is readable by
+  # anyone else, and the mode on a bind mount is whatever the host set.
+  for name in id_ed25519 id_ecdsa id_rsa config known_hosts; do
+    [ -f "$src/$name" ] || continue
+    install -m 0600 "$src/$name" "$dest/$name"
+  done
+  if ! ls "$dest"/id_* > /dev/null 2>&1; then
+    log "$src has no private key, so ssh has no identity"
+    return 0
+  fi
+  if [ ! -f "$dest/known_hosts" ]; then
+    log "$src has no known_hosts, so the first connection will have nothing to verify against"
+  fi
+  log "ssh identity installed from $src"
+}
+
+install_ssh_identity
+
 cd "$workdir"
 # Remote Control redraws a terminal status screen on stdout every second.
 # Under a container runtime that is a line a second into the journal, so

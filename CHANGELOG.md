@@ -6,6 +6,33 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-06
+
+### Added
+
+- **An ssh identity, for when the gateway is down.** Mount a private key, an
+  ssh `config` and a `known_hosts` at `/etc/josui/ssh` and the entrypoint
+  copies them into `~/.ssh` at mode 0600. Copied rather than pointed at: ssh
+  refuses a private key anyone else can read, and the mode on a bind mount is
+  the host's. Absent, nothing changes, so a copy run elsewhere is unaffected.
+
+  The reason is a gap this agent cannot otherwise cover. Every tool it has
+  arrives through the Trentina gateway, so a gateway that is down leaves it
+  with no tools at all — including the systemd tools that would restart the
+  gateway — and it cannot report that, because what it would report through is
+  what is down. The owner's words: he does not use Josui Prime much *because*
+  it cannot fall back to ssh.
+
+  There is **no sshd in the image**; this is a client and outbound only, so
+  "nothing listens for inbound connections" still holds. The image carries the
+  mechanism only — which host, which account and which key are deployment
+  facts and live in the mount. What it costs is in the README and in the
+  deployment's constitution: ssh output is not judged by the gateway the way
+  every MCP tool result is, and the session is logged by sshd rather than by
+  the gateway's audit.
+
+  RT#1556.
+
 ## [0.9.0] - 2026-11-06
 
 ### Removed

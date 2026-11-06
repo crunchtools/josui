@@ -1,6 +1,6 @@
 # josui Constitution
 
-> **Version:** 1.5.0
+> **Version:** 1.6.0
 > **Ratified:** 2026-10-11
 > **Status:** Active
 > **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.31.0
@@ -153,6 +153,35 @@ the host's monitoring configuration.
   the mounts, the read-only root, the internal network and the approval
   prompt, not by removing them.
 
+- **An ssh key to the host, on a path the gateway does not see.**
+  `josui.crunchtools.com` holds an ssh key to gloval as `josui-rescue`, a
+  forced-command principal that can list, inspect, start and restart
+  `*.crunchtools.com.service` units and read their journals, and nothing else.
+  It reaches sshd over the agent's own internal bridge (10.89.13.10 →
+  10.89.13.1:22422), opened by one nftables accept rule ahead of that
+  network's drop; the host's public interface is not involved and there is no
+  sshd in the container.
+
+  This exists because the one unit the operator role is forbidden to restart
+  over MCP is the Trentina gateway itself, and when the gateway is down the
+  agent has no MCP tools at all — so the rescue path is sized to that
+  emergency rather than to the agent's full mediated authority. The principle:
+  mediated authority is sized to the job, unmediated authority is sized to the
+  emergency. The operator role is root-equivalent on this host only because
+  the gateway logs every call and judges every byte that comes back; putting
+  that same breadth on a channel with neither would move the agent's widest
+  power onto its least observed path.
+
+  What is lost, plainly: this channel is not judged or logged by Trentina.
+  Output comes back to the model unjudged, and the only record is sshd plus
+  the dispatcher's own journal line. That is why it carries no pty, no shell
+  and no verb that writes anything but a unit's run state. A verb the script
+  lacks is added by pull request, with the journal entry showing why — the
+  list grows from evidence, not from granting a shell in advance.
+
+  Reversible by removing one `authorized_keys` line, one nftables rule, one
+  sudoers file, one script and one user.
+
 - **SELinux labelling off in `developer` containers.** The profile requires
   SELinux enforcing with labelled mounts. A `label=disable` container runs
   unconfined for container purposes, so this is a deviation in substance
@@ -185,9 +214,9 @@ the host's monitoring configuration.
 | Attribute | Value |
 |-----------|-------|
 | Container name | `<service>`, the host's name for this instance |
-| Port | none |
-| Host directory | `/srv/<service>/` (`config/` identity and env, `data/state`, `data/audit`, `data/josui-skills`) |
-| Interface | Claude Code Remote Control |
+| Port | none inbound; outbound ssh to the host's address on the agent's own bridge |
+| Host directory | `/srv/<service>/` (`config/` identity, `config/identity/ssh` the rescue key, and env, `data/state`, `data/audit`, `data/josui-skills`) |
+| Interface | Claude Code Remote Control, and the `josui-rescue` forced command over ssh when the gateway is down |
 
 ## History
 
@@ -201,3 +230,4 @@ the host's monitoring configuration.
 | 1.3.0 | 2026-11-06 | Liveness: Remote Control polls and its debug file is quiet while idle, so there is no local signal for bridge liveness; the 0.6.0 socket watchdog is removed and a session that does not appear is diagnosed from the --debug-file. RT#1556 |
 | 1.4.0 | 2026-11-06 | The development image is published as `developer`, not `josui-dev`: it is a different agent from Josui Prime, with its own profile, identity and reach, and the name said otherwise. RT#1556 |
 | 1.5.0 | 2026-11-06 | The development image moved to crunchtools/developer, with its own constitution; what is left here is a pointer. RT#1556 |
+| 1.6.0 | 2026-11-06 | An ssh key to gloval as `josui-rescue`, forced command, over the agent's own internal bridge: the gateway's protected-unit list refuses `unit_restart` on the gateway, and a gateway that is down leaves the agent with no tools to fix it with. Sized to that emergency, not to the operator role; unjudged and unaudited by Trentina, so no pty, no shell, no writing verb. RT#1556 |
