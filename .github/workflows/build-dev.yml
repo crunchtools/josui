@@ -1,0 +1,202 @@
+name: Build and Push Josui Dev
+
+# The development variant (Containerfile.dev). Same triggers as build.yml,
+# minus the tag release: this image is a build machine for agents, not a
+# shipped artifact, so it tracks main and the fleet's weekly pulse.
+#
+# Trivy blocks on CRITICAL and HIGH here exactly as it does in build.yml: one
+# policy per repo. The tempting argument -- "a Fedora base gated on Fedora's
+# CVE feed never builds" -- is false, and gha-runner's own build log says so:
+# Trivy prints `Detected OS family="fedora"` and then `WARN Unsupported os
+# family="fedora"`, and scans only language packages. So the gate sees what it
+# sees in the production image (bundled node modules, pip) and blocking costs
+# nothing.
+#
+# The real consequence is the inverse, and it is why `dnf -y upgrade` is in
+# Containerfile.dev: with Trivy blind to the OS layer and the base pinned by
+# digest, nothing else in this pipeline would ever move a Fedora package
+# forward. The weekly `parent-image-updated` rebuild does that job.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Containerfile.dev'
+      - 'rootfs/**'
+      - 'tests/**'
+      - '.github/workflows/build-dev.yml'
+  pull_request:
+    branches: [main]
+  repository_dispatch:
+    types: [parent-image-updated]
+  workflow_dispatch:
+
+env:
+  QUAY_IMAGE: quay.io/crunchtools/josui-dev
+  GHCR_IMAGE: ghcr.io/crunchtools/josui-dev
+
+jobs:
+  build-and-push-quay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Get version tag
+        id: version
+        run: |
+          TAG=$(git describe --tags --always 2>/dev/null || echo "v0.1.0")
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # load: true so the checks below read this build, and so a pull request
+      # still proves the image builds without pushing it anywhere.
+      - name: Build image for scanning
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Containerfile.dev
+          load: true
+          tags: josui-dev:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The acceptance for the image itself: every tool an agent in it needs,
+      # including the nested engine, answers before the image is published.
+      # Run with the flags the real unit uses, so the nested engine is asked
+      # the same question here that gloval will ask it. Whether nesting truly
+      # works is settled on gloval (RT#1556 C2); this step exists to catch a
+      # broken package list before a deploy does.
+      - name: The toolchain answers
+        run: |
+          docker run --rm --entrypoint /bin/bash \
+            --device /dev/fuse --security-opt label=disable \
+            josui-dev:scan -c '
+            set -euxo pipefail
+            claude --version
+            claude-agent --version
+            python3 -c "import sys; assert sys.version_info[:2] >= (3, 14), sys.version"
+            uv --version
+            tmux -V
+            git --version
+            node --version
+            pre-commit --version
+            podman --version
+          '
+          # NOT `podman info`: this step runs inside docker on a GitHub
+          # runner, whose default profile blocks the clone syscall the nested
+          # engine needs ("cannot clone: Operation not permitted"). Whether
+          # nesting works is a property of the host, and it is measured on
+          # gloval (RT#1556), not here. This step's job is to catch a broken
+          # package list before a deploy does.
+
+      # Full-severity inventory, report-only: the artifact a person reads when
+      # deciding what to accept. The gate below is what blocks the build.
+      - name: Trivy full CVE report (all severities, non-blocking)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: josui-dev:scan
+          format: "table"
+          exit-code: "0"
+          severity: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
+          scanners: "vuln"
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: josui-dev:scan
+          format: "table"
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
+          trivyignores: ".trivyignore"
+
+      # Required, not best-effort: the constitution asks for an SBOM per
+      # build, and a build that quietly produced none would still be green.
+      - name: Generate SBOM (Trivy / SPDX-JSON)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: josui-dev:scan
+          format: "spdx-json"
+          output: "josui-dev-sbom.spdx.json"
+          exit-code: "0"
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: josui-dev-sbom-${{ steps.version.outputs.sha_short }}
+          path: josui-dev-sbom.spdx.json
+          retention-days: 90
+
+      - name: Log in to Quay.io
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Containerfile.dev
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ env.QUAY_IMAGE }}:latest
+            ${{ env.QUAY_IMAGE }}:${{ steps.version.outputs.tag }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.description=josui-dev - Josui with a development toolchain and nested podman
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-and-push-ghcr:
+    runs-on: ubuntu-latest
+    needs: build-and-push-quay
+    if: github.event_name != 'pull_request'
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ github.token }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Containerfile.dev
+          push: true
+          tags: |
+            ${{ env.GHCR_IMAGE }}:latest
+            ${{ env.GHCR_IMAGE }}:${{ needs.build-and-push-quay.outputs.tag }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.description=josui-dev - Josui with a development toolchain and nested podman
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

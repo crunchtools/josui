@@ -77,18 +77,47 @@ if [ -d "$skills_repo/templates" ]; then
   ln -sfn "$skills_repo/templates" "$claude_dir/templates"
 fi
 
+# Claude Code's state file is JSON holding things only it knows about, so it
+# is edited by merging rather than rewritten. python3 and not `jq`: jq is not
+# in every image this script's own tests run in -- the python-sdlc container
+# has python and no jq, and the whole suite failed on that -- and the token
+# travels in the child's environment instead of its argv, where jq --arg put
+# it.
+edit_state_json() {
+  local state="$HOME/.claude.json" tmp
+  [ -s "$state" ] || echo '{}' > "$state"
+  tmp=$(mktemp "$HOME/.claude.json.XXXXXX")
+  chmod 0600 "$tmp"
+  if ! JOSUI_STATE_EDIT=$1 python3 -c '
+import json, os, sys
+
+with open(sys.argv[1]) as handle:
+    state = json.load(handle)
+if os.environ["JOSUI_STATE_EDIT"] == "gateway":
+    state["mcpServers"] = {
+        "trentina": {
+            "type": "http",
+            "url": os.environ["TRENTINA_MCP_URL"],
+            "headers": {"Authorization": "Bearer " + os.environ["TRENTINA_MCP_TOKEN"]},
+        }
+    }
+else:
+    state["hasCompletedOnboarding"] = True
+with open(sys.argv[2], "w") as handle:
+    json.dump(state, handle)
+' "$state" "$tmp"; then
+    rm -f "$tmp"
+    log "could not edit $state"
+    return 1
+  fi
+  mv "$tmp" "$state"
+}
+
 # The gateway is the one MCP server. Its address and token come from the
 # environment and are merged into the state file Claude Code reads, keeping
 # whatever else Claude Code has stored there.
 if [ -n "${TRENTINA_MCP_URL:-}" ] && [ -n "${TRENTINA_MCP_TOKEN:-}" ]; then
-  state="$HOME/.claude.json"
-  [ -s "$state" ] || echo '{}' > "$state"
-  tmp=$(mktemp "$HOME/.claude.json.XXXXXX")
-  jq --arg url "$TRENTINA_MCP_URL" --arg auth "Bearer $TRENTINA_MCP_TOKEN" \
-    '.mcpServers = {trentina: {type: "http", url: $url, headers: {Authorization: $auth}}}' \
-    "$state" > "$tmp"
-  chmod 0600 "$tmp"
-  mv "$tmp" "$state"
+  edit_state_json gateway
 else
   log "TRENTINA_MCP_URL / TRENTINA_MCP_TOKEN not set, starting without a gateway"
 fi
@@ -107,18 +136,132 @@ if [ -n "${JOSUI_MATRIX_HOMESERVER:-}" ]; then
   export CLAUDE_AGENT_MATRIX_TOKEN_FILE=${JOSUI_MATRIX_TOKEN_FILE:-/etc/josui-matrix/token}
   export CLAUDE_AGENT_MATRIX_ALLOW=${JOSUI_MATRIX_ALLOW:-}
   export CLAUDE_AGENT_MATRIX_STATE=$HOME/.config/josui/matrix-sync
-  state="$HOME/.claude.json"
-  [ -s "$state" ] || echo '{}' > "$state"
-  tmp=$(mktemp "$HOME/.claude.json.XXXXXX")
-  jq '.hasCompletedOnboarding = true' "$state" > "$tmp"
-  chmod 0600 "$tmp"
-  mv "$tmp" "$state"
+  edit_state_json onboarded
   session=1
 fi
 
 if [ "$#" -gt 0 ]; then
   exec "$@"
 fi
+
+# A proxy endpoint as /proc/net/tcp writes it: the address little-endian, the
+# port big-endian. "http://10.89.13.2:8021" becomes "020D590A:1F55".
+proxy_endpoint_hex() {
+  local url=$1 scheme host port a b c d octet
+  # The scheme decides the default port, and getting that wrong is not a
+  # cosmetic bug: the watchdog would then watch a port nothing is connected
+  # to, see no connection, and restart the container every grace period.
+  scheme=${url%%://*}
+  [ "$scheme" != "$url" ] || scheme=http
+  url=${url#*://}
+  url=${url%%/*}
+  host=${url%%:*}
+  port=${url##*:}
+  if [ "$port" = "$host" ]; then
+    case $scheme in
+      http) port=80 ;;
+      https) port=443 ;;
+      *) return 1 ;;
+    esac
+  fi
+  # Digits are not enough: port 65536 or octet 999 would format into an
+  # endpoint no connection can match, and the watchdog would read a live proxy
+  # as an outage and restart the container every grace period. Range first,
+  # then the address -- a successful match clears BASH_REMATCH, so the address
+  # has to be the last pattern tested before its groups are read.
+  [[ "$port" =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || return 1
+  [[ "$host" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]] || return 1
+  a=${BASH_REMATCH[1]} b=${BASH_REMATCH[2]} c=${BASH_REMATCH[3]} d=${BASH_REMATCH[4]}
+  for octet in "$a" "$b" "$c" "$d"; do
+    [ "$octet" -le 255 ] || return 1
+  done
+  printf '%02X%02X%02X%02X:%04X' "$d" "$c" "$b" "$a" "$port"
+}
+
+# How many ESTABLISHED connections there are to that endpoint. It FAILS rather
+# than printing 0 when it cannot tell, because a watchdog that cannot read its
+# own input must do nothing -- printing 0 there would restart the container
+# every grace period, for ever. Nothing external is called for the same
+# reason: this ran on awk until the test suite was run in an image without
+# one, and a missing awk looked exactly like a dead connection.
+egress_connections() {
+  local net_tcp=${JOSUI_NET_TCP:-/proc/net/tcp} target=$1 count=0
+  local slot local_address rem_address state rest
+  [ -r "$net_tcp" ] || return 1
+  while read -r slot local_address rem_address state rest; do
+    if [ "$rem_address" = "$target" ] && [ "$state" = "01" ]; then
+      count=$((count + 1))
+    fi
+  done < "$net_tcp"
+  printf '%s' "$count"
+}
+
+# Remote Control can keep running with no connection at all. It happened on
+# 2026-11-05: the gateway restarted, the client never came back, and the
+# container looked healthy for nineteen hours because the process was alive,
+# its stdout goes to /dev/null and Restart=always only fires when something
+# exits. So: if nothing is connected to the client egress for the grace
+# period, end the container and let the unit start it again.
+# One loop with two jobs, because both want the same tick: cap the debug file,
+# and watch the egress. Either argument may be empty -- a copy with no proxy
+# still needs its debug file capped, which it did not get when the capping
+# lived inside the connection watch.
+watchdog() {
+  local target=$1 log_file=$2
+  local grace=${JOSUI_WATCHDOG_GRACE:-300} interval=${JOSUI_WATCHDOG_INTERVAL:-60}
+  local down=0 max_bytes=${JOSUI_DEBUG_MAX_BYTES:-67108864} connections
+  while sleep "$interval"; do
+    if [ -n "$log_file" ] && [ "$(stat -c %s "$log_file" 2>/dev/null || echo 0)" -gt "$max_bytes" ]; then
+      : > "$log_file"
+      log "truncated $log_file at $max_bytes bytes"
+    fi
+    [ -n "$target" ] || continue
+    if ! connections=$(egress_connections "$target"); then
+      log "cannot read ${JOSUI_NET_TCP:-/proc/net/tcp}: not counting this interval"
+      continue
+    fi
+    if [ "$connections" -gt 0 ]; then
+      down=0
+      continue
+    fi
+    down=$((down + interval))
+    if [ "$down" -ge "$grace" ]; then
+      log "nothing connected to the client egress for ${down}s: Remote Control is not connected, stopping so the unit restarts it"
+      return 1
+    fi
+    log "nothing connected to the client egress (${down}s of ${grace}s grace)"
+  done
+}
+
+# A person's own terminal inside the container, for a copy that is worked in
+# rather than only texted and driven from the app:
+#
+#   podman exec -it <service> tmux attach -t dev
+#
+# tmux rather than `claude-agent attach --rw`, which renders the supervised
+# session at the fixed size the supervisor set rather than the attaching
+# terminal's. Deliberately NOT in the pid list below: someone exiting their
+# own shell must not take the container down with it.
+start_tmux_session() {
+  local tmux=${JOSUI_TMUX_CMD:-tmux}
+  if ! command -v "$tmux" > /dev/null 2>&1; then
+    log "JOSUI_TMUX is set but there is no $tmux in this image"
+    return
+  fi
+  if "$tmux" has-session -t dev 2>/dev/null; then
+    return
+  fi
+  if ! "$tmux" new-session -d -s dev -c "$workdir" \
+      claude --permission-mode "${JOSUI_PERMISSION_MODE:-acceptEdits}"; then
+    log "could not start the tmux session; carrying on without a terminal"
+    return
+  fi
+  # Quitting Claude Code leaves the pane to be respawned (prefix + :respawn-pane)
+  # instead of ending the session and losing the window layout with it.
+  "$tmux" set-option -t dev remain-on-exit on 2>/dev/null || true
+  "$tmux" new-window -d -t dev -c "$workdir" 2>/dev/null || true
+  log "tmux session 'dev' is up: podman exec -it <service> tmux attach -t dev"
+}
 
 cd "$workdir"
 # Remote Control redraws a terminal status screen on stdout every second.
@@ -131,22 +274,49 @@ server_args=(
   --spawn same-dir
   --capacity "${JOSUI_CAPACITY:-2}"
   --permission-mode "${JOSUI_PERMISSION_MODE:-acceptEdits}"
-  --remote-control-session-name-prefix "${JOSUI_NAME:-josui}"
 )
-if [ -z "$session" ]; then
-  exec claude "${server_args[@]}" > /dev/null
+# Session creation can fail in a way nothing else reports: on 2026-10-11 a
+# workdir that was a git checkout made Anthropic refuse every session with an
+# HTTP 400, and the only trace was in this file. It is truncated at each start
+# and capped by the watchdog above.
+debug_file=${JOSUI_DEBUG_FILE:-}
+if [ -z "$debug_file" ] && [ -n "${CLAUDE_AGENT_AUDIT_DIR:-}" ] && [ -d "${CLAUDE_AGENT_AUDIT_DIR:-}" ]; then
+  debug_file="$CLAUDE_AGENT_AUDIT_DIR/remote-control.log"
 fi
+if [ -n "$debug_file" ] && : > "$debug_file" 2>/dev/null; then
+  server_args+=(--debug-file "$debug_file")
+else
+  [ -z "$debug_file" ] || log "cannot write $debug_file, running without a debug file"
+  debug_file=
+fi
+server_args+=(--remote-control-session-name-prefix "${JOSUI_NAME:-josui}")
 
-# With the text session, the Remote Control server and claude-agent run side
-# by side. When either ends the container ends, and the unit restarts both.
+# The Remote Control server, the watchdog, and -- when a homeserver is
+# configured -- claude-agent, side by side. When any of them ends the
+# container ends, and the unit restarts all of it.
+pids=()
 claude "${server_args[@]}" > /dev/null &
-server=$!
-claude-agent run -- --permission-mode "${JOSUI_PERMISSION_MODE:-acceptEdits}" &
-session=$!
-trap 'kill "$server" "$session" 2>/dev/null' TERM INT
+pids+=($!)
+egress_target=
+if [ -n "${HTTPS_PROXY:-}" ] && ! egress_target=$(proxy_endpoint_hex "$HTTPS_PROXY"); then
+  egress_target=
+  log "HTTPS_PROXY is not a plain address, running without the egress watchdog"
+fi
+if [ -n "$egress_target" ] || [ -n "$debug_file" ]; then
+  watchdog "$egress_target" "$debug_file" &
+  pids+=($!)
+fi
+if [ -n "$session" ]; then
+  claude-agent run -- --permission-mode "${JOSUI_PERMISSION_MODE:-acceptEdits}" &
+  pids+=($!)
+fi
+if [ -n "${JOSUI_TMUX:-}" ]; then
+  start_tmux_session
+fi
+trap 'kill "${pids[@]}" 2>/dev/null' TERM INT
 status=0
-wait -n "$server" "$session" || status=$?
-log "a claude process ended (status $status), stopping"
-kill "$server" "$session" 2>/dev/null || true
+wait -n "${pids[@]}" || status=$?
+log "a supervised process ended (status $status), stopping"
+kill "${pids[@]}" 2>/dev/null || true
 wait || true
 exit "$status"

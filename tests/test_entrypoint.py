@@ -172,7 +172,7 @@ class EntrypointTest(unittest.TestCase):
         result = self.run_entrypoint(env=self.session_env())
         # The stand-in claude-agent exits 7 at once; the server is stopped too.
         self.assertEqual(result.returncode, 7, result.stderr)
-        self.assertIn("a claude process ended (status 7)", result.stderr)
+        self.assertIn("a supervised process ended (status 7)", result.stderr)
         self.assertEqual((self.home / "claude-args").read_text().split()[0], "remote-control")
         self.assertEqual(
             (self.home / "agent-args").read_text().split(),
@@ -214,6 +214,324 @@ class EntrypointTest(unittest.TestCase):
         # Trusting the working directory stays the operator's call.
         self.assertNotIn("projects", state)
         self.assertIn("trentina", state["mcpServers"])
+
+    # The client egress watchdog. The proxy in these tests is 192.0.2.2:8021,
+    # which /proc/net/tcp writes as 020200C0:1F55.
+    PROXY = "http://192.0.2.2:8021"
+    PROXY_HEX = "020200C0:1F55"
+    NET_TCP_HEADER = (
+        "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"
+    )
+
+    def net_tcp(self, *rows: str) -> str:
+        path = self.root / "net-tcp"
+        path.write_text(self.NET_TCP_HEADER + "".join(f"   0: 0100007F:A1B2 {row}\n" for row in rows))
+        return str(path)
+
+    def claude_that_runs_for(self, seconds: int) -> None:
+        claude = self.root / "bin/claude"
+        claude.write_text(f'#!/bin/bash\nprintf "%s\\n" "$@" > "$HOME/claude-args"\nexec sleep {seconds}\n')
+        claude.chmod(0o755)
+
+    def test_debug_file_is_asked_for_and_emptied_when_there_is_an_audit_dir(self) -> None:
+        audit = self.root / "audit"
+        audit.mkdir()
+        stale = audit / "remote-control.log"
+        stale.write_text("from the last container\n")
+        result = self.run_entrypoint(env={**self.env, "CLAUDE_AGENT_AUDIT_DIR": str(audit)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        args = (self.home / "claude-args").read_text().split()
+        self.assertEqual(args[args.index("--debug-file") + 1], str(stale))
+        # The session name prefix stays last, and the stale log is gone.
+        self.assertEqual(args[-1], "josui")
+        self.assertEqual(stale.read_text(), "")
+
+    def test_no_debug_file_when_there_is_nowhere_to_put_it(self) -> None:
+        self.assertEqual(self.run_entrypoint().returncode, 0)
+        self.assertNotIn("--debug-file", (self.home / "claude-args").read_text())
+
+    def test_nothing_connected_to_the_egress_stops_the_container(self) -> None:
+        self.claude_that_runs_for(30)
+        env = {
+            **self.env,
+            "HTTPS_PROXY": self.PROXY,
+            "JOSUI_NET_TCP": self.net_tcp("020D590A:1F53 01"),  # the gateway's MCP port, not the egress
+            "JOSUI_WATCHDOG_INTERVAL": "1",
+            "JOSUI_WATCHDOG_GRACE": "1",
+        }
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("Remote Control is not connected", result.stderr)
+
+    def test_an_established_egress_connection_keeps_the_container_running(self) -> None:
+        self.claude_that_runs_for(3)
+        env = {
+            **self.env,
+            "HTTPS_PROXY": self.PROXY,
+            "JOSUI_NET_TCP": self.net_tcp(f"{self.PROXY_HEX} 01"),
+            "JOSUI_WATCHDOG_INTERVAL": "1",
+            "JOSUI_WATCHDOG_GRACE": "1",
+        }
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("client egress", result.stderr)
+
+    def test_a_connection_that_is_not_established_does_not_count(self) -> None:
+        self.claude_that_runs_for(30)
+        env = {
+            **self.env,
+            "HTTPS_PROXY": self.PROXY,
+            "JOSUI_NET_TCP": self.net_tcp(f"{self.PROXY_HEX} 06"),  # TIME_WAIT
+            "JOSUI_WATCHDOG_INTERVAL": "1",
+            "JOSUI_WATCHDOG_GRACE": "1",
+        }
+        self.assertEqual(self.run_entrypoint(env=env).returncode, 1)
+
+    def test_an_unreadable_net_tcp_does_not_look_like_an_outage(self) -> None:
+        # The watchdog's own failure mode has to be doing nothing. Counting a
+        # file it cannot read as "no connection" would restart the container
+        # every grace period, for ever.
+        self.claude_that_runs_for(3)
+        env = {
+            **self.env,
+            "HTTPS_PROXY": self.PROXY,
+            "JOSUI_NET_TCP": str(self.root / "does-not-exist"),
+            "JOSUI_WATCHDOG_INTERVAL": "1",
+            "JOSUI_WATCHDOG_GRACE": "1",
+        }
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("not counting this interval", result.stderr)
+        self.assertNotIn("Remote Control is not connected", result.stderr)
+
+    def test_without_a_proxy_there_is_no_watchdog(self) -> None:
+        self.claude_that_runs_for(2)
+        env = {
+            **self.env,
+            "JOSUI_NET_TCP": self.net_tcp(),
+            "JOSUI_WATCHDOG_INTERVAL": "1",
+            "JOSUI_WATCHDOG_GRACE": "1",
+        }
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("client egress", result.stderr)
+
+    def test_a_proxy_that_is_not_an_address_is_reported_and_skipped(self) -> None:
+        self.claude_that_runs_for(2)
+        env = {**self.env, "HTTPS_PROXY": "http://gateway.internal:8021", "JOSUI_WATCHDOG_INTERVAL": "1"}
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("not a plain address", result.stderr)
+
+    def test_a_connection_that_comes_back_resets_the_outage_timer(self) -> None:
+        # The recovery branch: no connection at first, then one appears before
+        # the grace period is up. A regression that failed to reset the timer
+        # would stop a container that had recovered.
+        net_tcp = self.net_tcp()  # empty: nothing connected
+        established = self.NET_TCP_HEADER + f"   0: 0100007F:A1B2 {self.PROXY_HEX} 01\n"
+        claude = self.root / "bin/claude"
+        claude.write_text(
+            f'#!/bin/bash\nprintf "%s\\n" "$@" > "$HOME/claude-args"\n'
+            f"sleep 2\ncat > {net_tcp} <<'EOF'\n{established}EOF\nexec sleep 4\n"
+        )
+        claude.chmod(0o755)
+        env = {
+            **self.env,
+            "HTTPS_PROXY": self.PROXY,
+            "JOSUI_NET_TCP": net_tcp,
+            "JOSUI_WATCHDOG_INTERVAL": "1",
+            "JOSUI_WATCHDOG_GRACE": "4",
+        }
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # It noticed the outage and then stopped counting.
+        self.assertIn("of 4s grace", result.stderr)
+        self.assertNotIn("Remote Control is not connected", result.stderr)
+
+    def test_the_debug_file_is_capped_while_the_watchdog_runs(self) -> None:
+        audit = self.root / "audit"
+        audit.mkdir()
+        debug = audit / "remote-control.log"
+        claude = self.root / "bin/claude"
+        claude.write_text(
+            f'#!/bin/bash\nprintf "%s\\n" "$@" > "$HOME/claude-args"\n'
+            f"head -c 4096 /dev/zero > {debug}\nexec sleep 3\n"
+        )
+        claude.chmod(0o755)
+        env = {
+            **self.env,
+            "CLAUDE_AGENT_AUDIT_DIR": str(audit),
+            "HTTPS_PROXY": self.PROXY,
+            "JOSUI_NET_TCP": self.net_tcp(f"{self.PROXY_HEX} 01"),
+            "JOSUI_WATCHDOG_INTERVAL": "1",
+            "JOSUI_WATCHDOG_GRACE": "30",
+            "JOSUI_DEBUG_MAX_BYTES": "64",
+        }
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"truncated {debug} at 64 bytes", result.stderr)
+        self.assertEqual(debug.stat().st_size, 0)
+
+    def test_the_debug_file_is_capped_even_with_no_proxy_to_watch(self) -> None:
+        # The cap used to live inside the connection watch, so a copy with no
+        # HTTPS_PROXY had a debug file and nothing capping it.
+        audit = self.root / "audit"
+        audit.mkdir()
+        debug = audit / "remote-control.log"
+        claude = self.root / "bin/claude"
+        claude.write_text(
+            f'#!/bin/bash\nprintf "%s\\n" "$@" > "$HOME/claude-args"\n'
+            f"head -c 4096 /dev/zero > {debug}\nexec sleep 3\n"
+        )
+        claude.chmod(0o755)
+        env = {
+            **self.env,
+            "CLAUDE_AGENT_AUDIT_DIR": str(audit),
+            "JOSUI_WATCHDOG_INTERVAL": "1",
+            "JOSUI_DEBUG_MAX_BYTES": "64",
+        }
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"truncated {debug} at 64 bytes", result.stderr)
+        self.assertEqual(debug.stat().st_size, 0)
+
+    def test_an_https_proxy_without_a_port_is_watched_on_443(self) -> None:
+        # Defaulting to 80 here would watch a port nothing is connected to and
+        # restart the container every grace period.
+        self.claude_that_runs_for(3)
+        env = {
+            **self.env,
+            "HTTPS_PROXY": "https://192.0.2.2",
+            "JOSUI_NET_TCP": self.net_tcp("020200C0:01BB 01"),  # 443
+            "JOSUI_WATCHDOG_INTERVAL": "1",
+            "JOSUI_WATCHDOG_GRACE": "1",
+        }
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("Remote Control is not connected", result.stderr)
+
+    def test_an_explicit_debug_file_is_used(self) -> None:
+        explicit = self.root / "somewhere-else.log"
+        result = self.run_entrypoint(env={**self.env, "JOSUI_DEBUG_FILE": str(explicit)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        args = (self.home / "claude-args").read_text().split()
+        self.assertEqual(args[args.index("--debug-file") + 1], str(explicit))
+
+    def test_a_debug_file_that_cannot_be_written_is_reported_and_dropped(self) -> None:
+        env = {**self.env, "JOSUI_DEBUG_FILE": str(self.root / "no-such-directory/debug.log")}
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("running without a debug file", result.stderr)
+        self.assertNotIn("--debug-file", (self.home / "claude-args").read_text())
+
+    def test_a_proxy_that_cannot_be_parsed_is_skipped(self) -> None:
+        # Each of these would otherwise format into an endpoint no connection
+        # can match, which the watchdog would read as an outage.
+        for proxy in (
+            "http://10.89.13.2:not-a-port",
+            "http://10.89.13.2:65536",
+            "http://10.89.13.2:0",
+            "http://10.89.999.2:8021",
+            "ftp://10.89.13.2",
+        ):
+            with self.subTest(proxy=proxy):
+                self.setUp()
+                self.claude_that_runs_for(2)
+                env = {**self.env, "HTTPS_PROXY": proxy, "JOSUI_WATCHDOG_INTERVAL": "1"}
+                result = self.run_entrypoint(env=env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("not a plain address", result.stderr)
+
+    def test_the_inclusive_bounds_of_a_proxy_endpoint_are_accepted(self) -> None:
+        # The far ends of what the range checks allow still have to produce the
+        # endpoint /proc/net/tcp would show, or a live connection reads as an
+        # outage at exactly the boundary.
+        for proxy, row in (
+            ("http://0.0.0.255:1", "FF000000:0001"),
+            ("http://255.255.255.255:65535", "FFFFFFFF:FFFF"),
+        ):
+            with self.subTest(proxy=proxy):
+                self.setUp()
+                self.claude_that_runs_for(3)
+                env = {
+                    **self.env,
+                    "HTTPS_PROXY": proxy,
+                    "JOSUI_NET_TCP": self.net_tcp(f"{row} 01"),
+                    "JOSUI_WATCHDOG_INTERVAL": "1",
+                    "JOSUI_WATCHDOG_GRACE": "1",
+                }
+                result = self.run_entrypoint(env=env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotIn("Remote Control is not connected", result.stderr)
+                self.assertNotIn("not a plain address", result.stderr)
+
+    def test_an_http_proxy_without_a_port_is_watched_on_80(self) -> None:
+        self.claude_that_runs_for(3)
+        env = {
+            **self.env,
+            "HTTPS_PROXY": "http://192.0.2.2",
+            "JOSUI_NET_TCP": self.net_tcp("020200C0:0050 01"),  # 80
+            "JOSUI_WATCHDOG_INTERVAL": "1",
+            "JOSUI_WATCHDOG_GRACE": "1",
+        }
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("Remote Control is not connected", result.stderr)
+
+    # The person's own terminal (JOSUI_TMUX), with a tmux that records its
+    # arguments and reports no existing session.
+    def fake_tmux(self) -> None:
+        tmux = self.root / "bin/tmux"
+        tmux.write_text(
+            '#!/bin/bash\nprintf "%s\\n" "$*" >> "$HOME/tmux-args"\n'
+            '[ "$1" = has-session ] && exit 1\nexit 0\n'
+        )
+        tmux.chmod(0o755)
+
+    def test_tmux_session_is_started_when_asked(self) -> None:
+        self.fake_tmux()
+        result = self.run_entrypoint(env={**self.env, "JOSUI_TMUX": "1"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = (self.home / "tmux-args").read_text().splitlines()
+        self.assertEqual(calls[0], "has-session -t dev")
+        self.assertEqual(
+            calls[1],
+            f"new-session -d -s dev -c {self.home / 'work'} claude --permission-mode acceptEdits",
+        )
+        self.assertIn("set-option -t dev remain-on-exit on", calls)
+        self.assertIn("tmux session 'dev' is up", result.stderr)
+
+    def test_a_tmux_session_that_will_not_start_is_not_reported_as_up(self) -> None:
+        tmux = self.root / "bin/tmux"
+        tmux.write_text(
+            '#!/bin/bash\nprintf "%s\\n" "$*" >> "$HOME/tmux-args"\n'
+            '[ "$1" = new-session ] && exit 1\n[ "$1" = has-session ] && exit 1\nexit 0\n'
+        )
+        tmux.chmod(0o755)
+        result = self.run_entrypoint(env={**self.env, "JOSUI_TMUX": "1"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("could not start the tmux session", result.stderr)
+        self.assertNotIn("is up", result.stderr)
+        # It stopped there rather than carrying on to set-option.
+        self.assertNotIn("set-option", (self.home / "tmux-args").read_text())
+
+    def test_an_existing_tmux_session_is_left_alone(self) -> None:
+        tmux = self.root / "bin/tmux"
+        tmux.write_text('#!/bin/bash\nprintf "%s\\n" "$*" >> "$HOME/tmux-args"\nexit 0\n')
+        tmux.chmod(0o755)
+        self.run_entrypoint(env={**self.env, "JOSUI_TMUX": "1"})
+        self.assertEqual((self.home / "tmux-args").read_text().splitlines(), ["has-session -t dev"])
+
+    def test_no_tmux_session_unless_it_is_asked_for(self) -> None:
+        self.fake_tmux()
+        self.assertEqual(self.run_entrypoint().returncode, 0)
+        self.assertFalse((self.home / "tmux-args").exists())
+
+    def test_tmux_missing_from_the_image_is_reported_not_fatal(self) -> None:
+        env = {**self.env, "JOSUI_TMUX": "1", "JOSUI_TMUX_CMD": "tmux-that-is-not-installed"}
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("no tmux-that-is-not-installed in this image", result.stderr)
 
     def test_without_a_homeserver_there_is_no_text_session(self) -> None:
         agent = self.root / "bin/claude-agent"
