@@ -424,12 +424,36 @@ class EntrypointTest(unittest.TestCase):
         self.assertIn("running without a debug file", result.stderr)
         self.assertNotIn("--debug-file", (self.home / "claude-args").read_text())
 
-    def test_a_proxy_address_out_of_range_is_skipped(self) -> None:
-        self.claude_that_runs_for(2)
-        env = {**self.env, "HTTPS_PROXY": "http://10.89.13.2:not-a-port", "JOSUI_WATCHDOG_INTERVAL": "1"}
+    def test_a_proxy_that_cannot_be_parsed_is_skipped(self) -> None:
+        # Each of these would otherwise format into an endpoint no connection
+        # can match, which the watchdog would read as an outage.
+        for proxy in (
+            "http://10.89.13.2:not-a-port",
+            "http://10.89.13.2:65536",
+            "http://10.89.13.2:0",
+            "http://10.89.999.2:8021",
+            "ftp://10.89.13.2",
+        ):
+            with self.subTest(proxy=proxy):
+                self.setUp()
+                self.claude_that_runs_for(2)
+                env = {**self.env, "HTTPS_PROXY": proxy, "JOSUI_WATCHDOG_INTERVAL": "1"}
+                result = self.run_entrypoint(env=env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("not a plain address", result.stderr)
+
+    def test_an_http_proxy_without_a_port_is_watched_on_80(self) -> None:
+        self.claude_that_runs_for(3)
+        env = {
+            **self.env,
+            "HTTPS_PROXY": "http://192.0.2.2",
+            "JOSUI_NET_TCP": self.net_tcp("020200C0:0050 01"),  # 80
+            "JOSUI_WATCHDOG_INTERVAL": "1",
+            "JOSUI_WATCHDOG_GRACE": "1",
+        }
         result = self.run_entrypoint(env=env)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("not a plain address", result.stderr)
+        self.assertNotIn("Remote Control is not connected", result.stderr)
 
     # The person's own terminal (JOSUI_TMUX), with a tmux that records its
     # arguments and reports no existing session.
