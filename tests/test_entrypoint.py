@@ -442,6 +442,29 @@ class EntrypointTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("not a plain address", result.stderr)
 
+    def test_the_inclusive_bounds_of_a_proxy_endpoint_are_accepted(self) -> None:
+        # The far ends of what the range checks allow still have to produce the
+        # endpoint /proc/net/tcp would show, or a live connection reads as an
+        # outage at exactly the boundary.
+        for proxy, row in (
+            ("http://0.0.0.255:1", "FF000000:0001"),
+            ("http://255.255.255.255:65535", "FFFFFFFF:FFFF"),
+        ):
+            with self.subTest(proxy=proxy):
+                self.setUp()
+                self.claude_that_runs_for(3)
+                env = {
+                    **self.env,
+                    "HTTPS_PROXY": proxy,
+                    "JOSUI_NET_TCP": self.net_tcp(f"{row} 01"),
+                    "JOSUI_WATCHDOG_INTERVAL": "1",
+                    "JOSUI_WATCHDOG_GRACE": "1",
+                }
+                result = self.run_entrypoint(env=env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotIn("Remote Control is not connected", result.stderr)
+                self.assertNotIn("not a plain address", result.stderr)
+
     def test_an_http_proxy_without_a_port_is_watched_on_80(self) -> None:
         self.claude_that_runs_for(3)
         env = {
@@ -477,6 +500,20 @@ class EntrypointTest(unittest.TestCase):
         )
         self.assertIn("set-option -t dev remain-on-exit on", calls)
         self.assertIn("tmux session 'dev' is up", result.stderr)
+
+    def test_a_tmux_session_that_will_not_start_is_not_reported_as_up(self) -> None:
+        tmux = self.root / "bin/tmux"
+        tmux.write_text(
+            '#!/bin/bash\nprintf "%s\\n" "$*" >> "$HOME/tmux-args"\n'
+            '[ "$1" = new-session ] && exit 1\n[ "$1" = has-session ] && exit 1\nexit 0\n'
+        )
+        tmux.chmod(0o755)
+        result = self.run_entrypoint(env={**self.env, "JOSUI_TMUX": "1"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("could not start the tmux session", result.stderr)
+        self.assertNotIn("is up", result.stderr)
+        # It stopped there rather than carrying on to set-option.
+        self.assertNotIn("set-option", (self.home / "tmux-args").read_text())
 
     def test_an_existing_tmux_session_is_left_alone(self) -> None:
         tmux = self.root / "bin/tmux"
