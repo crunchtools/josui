@@ -1,6 +1,6 @@
 # josui Constitution
 
-> **Version:** 1.2.0
+> **Version:** 1.3.0
 > **Ratified:** 2026-10-11
 > **Status:** Active
 > **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.31.0
@@ -64,6 +64,12 @@ whatever was there.
   turns off the feature-flag fetch Remote Control refuses to start without.
 - **Trivy:** blocking on CRITICAL and HIGH with `.trivyignore`; SBOM (SPDX)
   per build. cosign signing is not wired yet.
+- **Liveness:** there is none to monitor from inside. Remote Control polls
+  rather than holding a connection, and its debug file is quiet while idle, so
+  neither sockets nor file mtimes say whether the bridge is alive. A session
+  that does not appear is diagnosed from the `--debug-file`, not inferred.
+  A watchdog built on socket sampling was shipped in 0.6.0 and removed in
+  0.7.0 (RT#1556); do not reintroduce one without a signal that was measured.
 - **No `schedule:` trigger:** rebuilt on `parent-image-updated`, the fleet's
   weekly pulse.
 - **Runtime:** UID 1000, `--read-only`, `--tmpfs /tmp`, `--cap-drop=ALL`,
@@ -218,3 +224,4 @@ the host's monitoring configuration.
 | 1.0.2 | 2026-10-14 | Human in the loop: the allow hook answers in plan mode too; plan approval stays the gate; declined calls are logged |
 | 1.1.0 | 2026-10-14 | GitHub only through the gateway (no gh, no credential); the allow hook and memory guard ship in the image; managed hooks only; web tools denied in managed settings. Inherits v1.26.0 |
 | 1.2.0 | 2026-11-05 | The development image (`josui-dev`): its base, its measured five-capability set, its unprivileged UID mapping, and the recorded `label=disable` deviation with what replaces SELinux and what is lost. Trivy does not scan Fedora OS packages; `dnf -y upgrade` plus the weekly rebuild is that layer's only control. RT#1556 |
+| 1.3.0 | 2026-11-06 | Liveness: Remote Control polls and its debug file is quiet while idle, so there is no local signal for bridge liveness; the 0.6.0 socket watchdog is removed and a session that does not appear is diagnosed from the --debug-file. RT#1556 |

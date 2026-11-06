@@ -6,6 +6,29 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-06
+
+### Removed
+
+- The egress watchdog from 0.6.0. It measured the wrong thing. Remote Control
+  polls -- a connection to the proxy roughly every thirty to two hundred
+  seconds, gone in about a second -- so a healthy idle container shows no
+  connection at almost any instant: measured on gloval, one hit in ten samples
+  over two minutes against a container that was polling normally. As shipped it
+  would have ended a healthy container about once per grace period. The debug
+  file does not grow while idle either, so there is no cheap local signal for
+  bridge liveness, and `JOSUI_WATCHDOG_GRACE`, `JOSUI_WATCHDOG_INTERVAL`,
+  `JOSUI_DEBUG_MAX_BYTES` and `JOSUI_NET_TCP` are gone with it.
+
+### Changed
+
+- The `--debug-file` stays, and the README now says to read it first. It earned
+  that: on its first read it explained why Josui Prime had shown no session for
+  a day -- a work item created days earlier that the server ends with
+  `reason=archived` as soon as the bridge picks it up, after which the bridge
+  idles with no session. No watchdog would have found that, and restarting
+  never fixed it.
+
 ## [0.6.0] - 2026-11-05
 
 ### Added
