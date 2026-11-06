@@ -287,6 +287,23 @@ class EntrypointTest(unittest.TestCase):
         }
         self.assertEqual(self.run_entrypoint(env=env).returncode, 1)
 
+    def test_an_unreadable_net_tcp_does_not_look_like_an_outage(self) -> None:
+        # The watchdog's own failure mode has to be doing nothing. Counting a
+        # file it cannot read as "no connection" would restart the container
+        # every grace period, for ever.
+        self.claude_that_runs_for(3)
+        env = {
+            **self.env,
+            "HTTPS_PROXY": self.PROXY,
+            "JOSUI_NET_TCP": str(self.root / "does-not-exist"),
+            "JOSUI_WATCHDOG_INTERVAL": "1",
+            "JOSUI_WATCHDOG_GRACE": "1",
+        }
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("not counting this interval", result.stderr)
+        self.assertNotIn("Remote Control is not connected", result.stderr)
+
     def test_without_a_proxy_there_is_no_watchdog(self) -> None:
         self.claude_that_runs_for(2)
         env = {
@@ -348,6 +365,29 @@ class EntrypointTest(unittest.TestCase):
             "JOSUI_NET_TCP": self.net_tcp(f"{self.PROXY_HEX} 01"),
             "JOSUI_WATCHDOG_INTERVAL": "1",
             "JOSUI_WATCHDOG_GRACE": "30",
+            "JOSUI_DEBUG_MAX_BYTES": "64",
+        }
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"truncated {debug} at 64 bytes", result.stderr)
+        self.assertEqual(debug.stat().st_size, 0)
+
+    def test_the_debug_file_is_capped_even_with_no_proxy_to_watch(self) -> None:
+        # The cap used to live inside the connection watch, so a copy with no
+        # HTTPS_PROXY had a debug file and nothing capping it.
+        audit = self.root / "audit"
+        audit.mkdir()
+        debug = audit / "remote-control.log"
+        claude = self.root / "bin/claude"
+        claude.write_text(
+            f'#!/bin/bash\nprintf "%s\\n" "$@" > "$HOME/claude-args"\n'
+            f"head -c 4096 /dev/zero > {debug}\nexec sleep 3\n"
+        )
+        claude.chmod(0o755)
+        env = {
+            **self.env,
+            "CLAUDE_AGENT_AUDIT_DIR": str(audit),
+            "JOSUI_WATCHDOG_INTERVAL": "1",
             "JOSUI_DEBUG_MAX_BYTES": "64",
         }
         result = self.run_entrypoint(env=env)

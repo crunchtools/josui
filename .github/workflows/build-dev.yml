@@ -43,7 +43,6 @@ jobs:
       contents: read
     outputs:
       tag: ${{ steps.version.outputs.tag }}
-      sha_short: ${{ steps.version.outputs.sha_short }}
 
     steps:
       - name: Checkout
