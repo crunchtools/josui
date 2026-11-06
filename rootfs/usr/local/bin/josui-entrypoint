@@ -147,12 +147,23 @@ fi
 # A proxy endpoint as /proc/net/tcp writes it: the address little-endian, the
 # port big-endian. "http://10.89.13.2:8021" becomes "020D590A:1F55".
 proxy_endpoint_hex() {
-  local url=$1 host port a b c d
+  local url=$1 scheme host port a b c d
+  # The scheme decides the default port, and getting that wrong is not a
+  # cosmetic bug: the watchdog would then watch a port nothing is connected
+  # to, see no connection, and restart the container every grace period.
+  scheme=${url%%://*}
+  [ "$scheme" != "$url" ] || scheme=http
   url=${url#*://}
   url=${url%%/*}
   host=${url%%:*}
   port=${url##*:}
-  [ "$port" != "$host" ] || port=80
+  if [ "$port" = "$host" ]; then
+    case $scheme in
+      http) port=80 ;;
+      https) port=443 ;;
+      *) return 1 ;;
+    esac
+  fi
   # The port is checked first: a successful match clears BASH_REMATCH, so the
   # address has to be the last pattern tested before its groups are read.
   [[ "$port" =~ ^[0-9]+$ ]] || return 1

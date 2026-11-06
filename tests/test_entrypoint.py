@@ -395,6 +395,35 @@ class EntrypointTest(unittest.TestCase):
         self.assertIn(f"truncated {debug} at 64 bytes", result.stderr)
         self.assertEqual(debug.stat().st_size, 0)
 
+    def test_an_https_proxy_without_a_port_is_watched_on_443(self) -> None:
+        # Defaulting to 80 here would watch a port nothing is connected to and
+        # restart the container every grace period.
+        self.claude_that_runs_for(3)
+        env = {
+            **self.env,
+            "HTTPS_PROXY": "https://192.0.2.2",
+            "JOSUI_NET_TCP": self.net_tcp("020200C0:01BB 01"),  # 443
+            "JOSUI_WATCHDOG_INTERVAL": "1",
+            "JOSUI_WATCHDOG_GRACE": "1",
+        }
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("Remote Control is not connected", result.stderr)
+
+    def test_an_explicit_debug_file_is_used(self) -> None:
+        explicit = self.root / "somewhere-else.log"
+        result = self.run_entrypoint(env={**self.env, "JOSUI_DEBUG_FILE": str(explicit)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        args = (self.home / "claude-args").read_text().split()
+        self.assertEqual(args[args.index("--debug-file") + 1], str(explicit))
+
+    def test_a_debug_file_that_cannot_be_written_is_reported_and_dropped(self) -> None:
+        env = {**self.env, "JOSUI_DEBUG_FILE": str(self.root / "no-such-directory/debug.log")}
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("running without a debug file", result.stderr)
+        self.assertNotIn("--debug-file", (self.home / "claude-args").read_text())
+
     def test_a_proxy_address_out_of_range_is_skipped(self) -> None:
         self.claude_that_runs_for(2)
         env = {**self.env, "HTTPS_PROXY": "http://10.89.13.2:not-a-port", "JOSUI_WATCHDOG_INTERVAL": "1"}
