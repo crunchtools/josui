@@ -4,13 +4,18 @@ name: Build and Push Josui Dev
 # minus the tag release: this image is a build machine for agents, not a
 # shipped artifact, so it tracks main and the fleet's weekly pulse.
 #
-# One deliberate difference from build.yml: Trivy is REPORT-ONLY here. The
-# base is quay.io/podman/stable (Fedora), the same call gha-runner made for
-# the same reason -- a dev container carries a container engine and a
-# toolchain, and gating it on Fedora's CVE feed would stop every build without
-# telling anyone anything new. The production josui image keeps its blocking
-# scan. What limits this image's blast radius is its Trentina profile and the
-# fact that it holds no production data, not its CVE count.
+# Trivy blocks on CRITICAL and HIGH here exactly as it does in build.yml: one
+# policy per repo. The tempting argument -- "a Fedora base gated on Fedora's
+# CVE feed never builds" -- is false, and gha-runner's own build log says so:
+# Trivy prints `Detected OS family="fedora"` and then `WARN Unsupported os
+# family="fedora"`, and scans only language packages. So the gate sees what it
+# sees in the production image (bundled node modules, pip) and blocking costs
+# nothing.
+#
+# The real consequence is the inverse, and it is why `dnf -y upgrade` is in
+# Containerfile.dev: with Trivy blind to the OS layer and the base pinned by
+# digest, nothing else in this pipeline would ever move a Fedora package
+# forward. The weekly `parent-image-updated` rebuild does that job.
 
 on:
   push:
@@ -90,15 +95,25 @@ jobs:
             podman info > /dev/null
           '
 
+      # Full-severity inventory, report-only: the artifact a person reads when
+      # deciding what to accept. The gate below is what blocks the build.
       - name: Trivy full CVE report (all severities, non-blocking)
         uses: aquasecurity/trivy-action@v0.36.0
-        continue-on-error: true
         with:
           image-ref: josui-dev:scan
           format: "table"
           exit-code: "0"
           severity: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
           scanners: "vuln"
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: josui-dev:scan
+          format: "table"
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
+          trivyignores: ".trivyignore"
 
       # Required, not best-effort: the constitution asks for an SBOM per
       # build, and a build that quietly produced none would still be green.

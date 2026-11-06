@@ -76,7 +76,12 @@ RUN rpm --import https://downloads.claude.ai/keys/claude-code.asc && \
 # tmux is how a person reaches the live session (README, "Attaching").
 # nodejs-full-i18n: without the locale data, tests that format a date pass in
 # a site's own container and fail here.
-RUN dnf -y install --setopt=install_weak_deps=0 \
+# `upgrade` before `install`, and it is load-bearing rather than tidiness:
+# Trivy cannot scan Fedora packages ("Unsupported os family"), and the base is
+# pinned by digest, so this line is the ONLY thing in the pipeline that moves
+# the OS layer forward. It runs on every weekly `parent-image-updated` rebuild.
+RUN dnf -y upgrade && \
+    dnf -y install --setopt=install_weak_deps=0 \
         git-core git openssh-clients jq tar gzip findutils diffutils which \
         procps-ng hostname rsync less sqlite ripgrep tmux \
         python3 python3-devel python3-pip gcc make \

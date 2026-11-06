@@ -1,6 +1,6 @@
 # josui Constitution
 
-> **Version:** 1.1.0
+> **Version:** 1.2.0
 > **Ratified:** 2026-10-11
 > **Status:** Active
 > **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.31.0
@@ -74,6 +74,39 @@ whatever was there.
   run as root, and two owners in one git checkout break it for both. The
   process holds no capabilities on either side of the mapping.
 
+### The development image (`josui-dev`)
+
+`Containerfile.dev` builds a second image for agents that develop rather than
+operate: `quay.io/crunchtools/josui-dev`, the same entrypoint and mount
+contract plus python 3.14, `uv`, node, `pre-commit`, tmux and a nested
+container engine, so an agent can render a repo's own gates instead of
+waiting for CI.
+
+- **Base:** `quay.io/podman/stable`, pinned by digest, the same digest
+  gha-runner runs. Not UBI: UBI 10 fails a nested `podman run` with "mount
+  `proc` to `proc`: Operation not permitted" (measured, gha-runner's
+  Containerfile).
+- **Trivy** blocks on CRITICAL and HIGH as it does for the production image.
+  It does **not** cover this image's OS layer: Trivy reports `Unsupported os
+  family="fedora"` and scans language packages only. `dnf -y upgrade` in the
+  Containerfile plus the weekly `parent-image-updated` rebuild is the OS-layer
+  control, and it is the only one.
+- **Runtime:** UID 1000 mapped to an **unprivileged** host range — not to
+  host root, unlike the production instance — `--read-only` with tmpfs on
+  `/tmp`, `/var/tmp` and `/run`, the nested engine's storage on a volume of
+  its own, `--cap-drop=all --cap-add=setuid,setgid,sys_chroot,chown,setfcap`,
+  an internal network with `--dns=none`, and memory and pid limits. It does
+  **not** set `no-new-privileges`: `newuidmap` acquires its privilege through
+  a file capability, and that option blocks it.
+- **Capability set, measured on gloval 2026-11-05 (RT#1556):** `--cap-drop=all`
+  alone fails at `newuidmap`; `setuid` and `setgid` get past it and fail
+  unpacking a layer; `sys_chroot` is the one that fixes it; `chown` and
+  `setfcap` are kept because a real layer carrying a file owner or a file
+  capability needs them. Five of podman's eleven default capabilities, with no
+  `SYS_ADMIN`, no `DAC_OVERRIDE`, no `MKNOD` and no `--privileged`.
+- **No production data.** No `/srv` service tree is mounted; repositories are
+  cloned through the gateway's git route into the container's own volume.
+
 ## Layer 4 — Runtime Security & Behavioral Controls
 
 - **Circuit breakers** (claude-agent's `hooks.py breaker`): 500 tool calls per conversation and 5
@@ -140,6 +173,33 @@ the host's monitoring configuration.
   the mounts, the read-only root, the internal network and the approval
   prompt, not by removing them.
 
+- **SELinux labelling off in `josui-dev` containers.** The profile requires
+  SELinux enforcing with labelled mounts. A `label=disable` container runs
+  unconfined for container purposes, so this is a deviation in substance
+  whatever the host's `getenforce` says. It is required: with labels on, a
+  nested pull succeeds and a nested run fails with `crun: read from sync
+  socket: Connection reset by peer` (measured on gloval, 2026-11-05). It is
+  set on the development containers only; every other container on the host
+  keeps its confinement. Rejected alternatives: the host-wide
+  `container_modify_selinux_labels` boolean, which would loosen 56 containers
+  to serve three and is not even proven sufficient, and a local policy module,
+  which cannot be written without AVCs and is the follow-up item, not the
+  blocker.
+
+  What does SELinux's old job instead, in order of weight: UID 1000 mapped to
+  an unprivileged host range, so file access is DAC's problem and no mount may
+  be root-owned-writable outside the container's own volumes; only its own
+  volumes mounted, no `/srv` tree and no production data; `--cap-drop=all`
+  plus the five measured capabilities, no `SYS_ADMIN` and never
+  `--privileged`; `--read-only` with tmpfs on `/tmp`, `/var/tmp` and `/run`;
+  its own internal network with no DNS and no host route; egress only through
+  its own Trentina profile, which has a five-host allowlist and no operator
+  role; memory and pid limits; and claude-agent's audit log and circuit
+  breakers.
+
+  What is lost, stated plainly: a path the container should not reach is now
+  stopped by the UID map alone, with no MAC behind it.
+
 ## Service
 
 | Attribute | Value |
@@ -157,3 +217,4 @@ the host's monitoring configuration.
 | 1.0.1 | 2026-10-13 | Human in the loop: the hook that holds the no-prompt deviation when the app sets the mode |
 | 1.0.2 | 2026-10-14 | Human in the loop: the allow hook answers in plan mode too; plan approval stays the gate; declined calls are logged |
 | 1.1.0 | 2026-10-14 | GitHub only through the gateway (no gh, no credential); the allow hook and memory guard ship in the image; managed hooks only; web tools denied in managed settings. Inherits v1.26.0 |
+| 1.2.0 | 2026-11-05 | The development image (`josui-dev`): its base, its measured five-capability set, its unprivileged UID mapping, and the recorded `label=disable` deviation with what replaces SELinux and what is lost. Trivy does not scan Fedora OS packages; `dnf -y upgrade` plus the weekly rebuild is that layer's only control. RT#1556 |
