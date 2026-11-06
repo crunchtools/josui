@@ -158,10 +158,16 @@ the same entrypoint and the same mount contract, plus python 3.14, `uv`,
 node, `pre-commit`, tmux and a nested container engine, so an agent in it can
 run a repo's real gates rather than wait for CI to render them.
 
-It is **less contained than this image, deliberately**. Nested rootless
-podman needs `--device /dev/fuse`, `--security-opt label=disable`, podman's
-default capabilities (`newuidmap` acquires its privilege through a file
-capability, which `--cap-drop=all` prevents) and writable container storage.
+It is **less contained than this image, deliberately**, and by exactly this
+much, measured on gloval rather than assumed:
+
+| Setting | Why |
+|---------|-----|
+| `--device /dev/fuse` | the nested engine's storage driver |
+| `--cap-drop=all --cap-add=setuid,setgid,sys_chroot,chown,setfcap` | `--cap-drop=all` alone fails at `newuidmap`; setuid and setgid get past it and then fail unpacking a layer; `sys_chroot` fixes that; `chown` and `setfcap` are kept for layers that carry either. 5 of podman's 11 default capabilities: no `SYS_ADMIN`, no `DAC_OVERRIDE`, not privileged |
+| `--security-opt label=disable` | under SELinux enforcing the nested pull works and the nested run fails with `crun: read from sync socket`. Set on these containers only; every other container on the host keeps its confinement |
+| nested storage on a volume | the root filesystem still stays `--read-only`, with tmpfs on `/tmp`, `/var/tmp` and `/run` |
+
 Its base is `quay.io/podman/stable`, not UBI: UBI 10 fails a nested `podman
 run` with "mount `proc` to `proc`: Operation not permitted", measured in
 [gha-runner](https://github.com/crunchtools/gha-runner)'s Containerfile.

@@ -306,6 +306,62 @@ class EntrypointTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("not a plain address", result.stderr)
 
+    def test_a_connection_that_comes_back_resets_the_outage_timer(self) -> None:
+        # The recovery branch: no connection at first, then one appears before
+        # the grace period is up. A regression that failed to reset the timer
+        # would stop a container that had recovered.
+        net_tcp = self.net_tcp()  # empty: nothing connected
+        established = self.NET_TCP_HEADER + f"   0: 0100007F:A1B2 {self.PROXY_HEX} 01\n"
+        claude = self.root / "bin/claude"
+        claude.write_text(
+            f'#!/bin/bash\nprintf "%s\\n" "$@" > "$HOME/claude-args"\n'
+            f"sleep 2\ncat > {net_tcp} <<'EOF'\n{established}EOF\nexec sleep 4\n"
+        )
+        claude.chmod(0o755)
+        env = {
+            **self.env,
+            "HTTPS_PROXY": self.PROXY,
+            "JOSUI_NET_TCP": net_tcp,
+            "JOSUI_WATCHDOG_INTERVAL": "1",
+            "JOSUI_WATCHDOG_GRACE": "4",
+        }
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # It noticed the outage and then stopped counting.
+        self.assertIn("of 4s grace", result.stderr)
+        self.assertNotIn("Remote Control is not connected", result.stderr)
+
+    def test_the_debug_file_is_capped_while_the_watchdog_runs(self) -> None:
+        audit = self.root / "audit"
+        audit.mkdir()
+        debug = audit / "remote-control.log"
+        claude = self.root / "bin/claude"
+        claude.write_text(
+            f'#!/bin/bash\nprintf "%s\\n" "$@" > "$HOME/claude-args"\n'
+            f"head -c 4096 /dev/zero > {debug}\nexec sleep 3\n"
+        )
+        claude.chmod(0o755)
+        env = {
+            **self.env,
+            "CLAUDE_AGENT_AUDIT_DIR": str(audit),
+            "HTTPS_PROXY": self.PROXY,
+            "JOSUI_NET_TCP": self.net_tcp(f"{self.PROXY_HEX} 01"),
+            "JOSUI_WATCHDOG_INTERVAL": "1",
+            "JOSUI_WATCHDOG_GRACE": "30",
+            "JOSUI_DEBUG_MAX_BYTES": "64",
+        }
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"truncated {debug} at 64 bytes", result.stderr)
+        self.assertEqual(debug.stat().st_size, 0)
+
+    def test_a_proxy_address_out_of_range_is_skipped(self) -> None:
+        self.claude_that_runs_for(2)
+        env = {**self.env, "HTTPS_PROXY": "http://10.89.13.2:not-a-port", "JOSUI_WATCHDOG_INTERVAL": "1"}
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("not a plain address", result.stderr)
+
     # The person's own terminal (JOSUI_TMUX), with a tmux that records its
     # arguments and reports no existing session.
     def fake_tmux(self) -> None:

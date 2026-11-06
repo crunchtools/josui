@@ -15,13 +15,29 @@
 # The digest below is the one gha-runner already runs on gloval, so the two
 # images share the host's layer cache.
 #
-# WHAT THIS COSTS, stated plainly: a container running this image needs
-# --device /dev/fuse, --security-opt label=disable, podman's default
-# capabilities (nested rootless podman shells out to newuidmap, which needs a
-# file capability) and writable container storage. Josui Prime has none of
-# those. That is the trade for a local inner loop, and it is why this is a
-# separate image with its own Trentina profile rather than a flag on the
-# production one.
+# WHAT THIS COSTS, measured on gloval rather than assumed (2026-11-05,
+# RT#1556). A container running this image needs, and needs no more than:
+#
+#   --device /dev/fuse
+#   --cap-drop=all --cap-add=setuid,setgid,sys_chroot,chown,setfcap
+#   --security-opt label=disable
+#   the nested engine's storage on a volume (the root filesystem can stay
+#   --read-only, with tmpfs on /tmp, /var/tmp and /run)
+#
+# How that set was arrived at: --cap-drop=all alone fails with "newuidmap:
+# operation not permitted"; adding setuid and setgid gets past newuidmap and
+# then fails unpacking a layer ("after fallback to chroot"); sys_chroot is the
+# one that fixes it; chown and setfcap are kept because a layer carrying
+# either needs them. That is 5 of podman's 11 default capabilities -- no
+# SYS_ADMIN, no DAC_OVERRIDE, no MKNOD, not privileged. With SELinux
+# enforcing the nested PULL works and the nested RUN fails with "crun: read
+# from sync socket: Connection reset by peer", which is what label=disable is
+# for; it is set on these containers only, and every other container on the
+# host keeps its confinement.
+#
+# Josui Prime has none of this. That is the trade for a local inner loop, and
+# it is why this is a separate image with its own Trentina profile rather than
+# a flag on the production one.
 #
 # Build happens in GitHub Actions (.github/workflows/build-dev.yml).
 

@@ -100,9 +100,10 @@ jobs:
           severity: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
           scanners: "vuln"
 
+      # Required, not best-effort: the constitution asks for an SBOM per
+      # build, and a build that quietly produced none would still be green.
       - name: Generate SBOM (Trivy / SPDX-JSON)
         uses: aquasecurity/trivy-action@v0.36.0
-        continue-on-error: true
         with:
           image-ref: josui-dev:scan
           format: "spdx-json"
@@ -110,7 +111,6 @@ jobs:
           exit-code: "0"
 
       - name: Upload SBOM artifact
-        if: hashFiles('josui-dev-sbom.spdx.json') != ''
         uses: actions/upload-artifact@v7
         with:
           name: josui-dev-sbom-${{ steps.version.outputs.sha_short }}

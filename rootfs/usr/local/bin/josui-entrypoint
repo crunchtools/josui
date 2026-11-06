@@ -77,18 +77,47 @@ if [ -d "$skills_repo/templates" ]; then
   ln -sfn "$skills_repo/templates" "$claude_dir/templates"
 fi
 
+# Claude Code's state file is JSON holding things only it knows about, so it
+# is edited by merging rather than rewritten. python3 and not `jq`: jq is not
+# in every image this script's own tests run in -- the python-sdlc container
+# has python and no jq, and the whole suite failed on that -- and the token
+# travels in the child's environment instead of its argv, where jq --arg put
+# it.
+edit_state_json() {
+  local state="$HOME/.claude.json" tmp
+  [ -s "$state" ] || echo '{}' > "$state"
+  tmp=$(mktemp "$HOME/.claude.json.XXXXXX")
+  chmod 0600 "$tmp"
+  if ! JOSUI_STATE_EDIT=$1 python3 -c '
+import json, os, sys
+
+with open(sys.argv[1]) as handle:
+    state = json.load(handle)
+if os.environ["JOSUI_STATE_EDIT"] == "gateway":
+    state["mcpServers"] = {
+        "trentina": {
+            "type": "http",
+            "url": os.environ["TRENTINA_MCP_URL"],
+            "headers": {"Authorization": "Bearer " + os.environ["TRENTINA_MCP_TOKEN"]},
+        }
+    }
+else:
+    state["hasCompletedOnboarding"] = True
+with open(sys.argv[2], "w") as handle:
+    json.dump(state, handle)
+' "$state" "$tmp"; then
+    rm -f "$tmp"
+    log "could not edit $state"
+    return 1
+  fi
+  mv "$tmp" "$state"
+}
+
 # The gateway is the one MCP server. Its address and token come from the
 # environment and are merged into the state file Claude Code reads, keeping
 # whatever else Claude Code has stored there.
 if [ -n "${TRENTINA_MCP_URL:-}" ] && [ -n "${TRENTINA_MCP_TOKEN:-}" ]; then
-  state="$HOME/.claude.json"
-  [ -s "$state" ] || echo '{}' > "$state"
-  tmp=$(mktemp "$HOME/.claude.json.XXXXXX")
-  jq --arg url "$TRENTINA_MCP_URL" --arg auth "Bearer $TRENTINA_MCP_TOKEN" \
-    '.mcpServers = {trentina: {type: "http", url: $url, headers: {Authorization: $auth}}}' \
-    "$state" > "$tmp"
-  chmod 0600 "$tmp"
-  mv "$tmp" "$state"
+  edit_state_json gateway
 else
   log "TRENTINA_MCP_URL / TRENTINA_MCP_TOKEN not set, starting without a gateway"
 fi
@@ -107,12 +136,7 @@ if [ -n "${JOSUI_MATRIX_HOMESERVER:-}" ]; then
   export CLAUDE_AGENT_MATRIX_TOKEN_FILE=${JOSUI_MATRIX_TOKEN_FILE:-/etc/josui-matrix/token}
   export CLAUDE_AGENT_MATRIX_ALLOW=${JOSUI_MATRIX_ALLOW:-}
   export CLAUDE_AGENT_MATRIX_STATE=$HOME/.config/josui/matrix-sync
-  state="$HOME/.claude.json"
-  [ -s "$state" ] || echo '{}' > "$state"
-  tmp=$(mktemp "$HOME/.claude.json.XXXXXX")
-  jq '.hasCompletedOnboarding = true' "$state" > "$tmp"
-  chmod 0600 "$tmp"
-  mv "$tmp" "$state"
+  edit_state_json onboarded
   session=1
 fi
 
@@ -151,13 +175,16 @@ egress_connections() {
 # exits. So: if nothing is connected to the client egress for the grace
 # period, end the container and let the unit start it again.
 egress_watchdog() {
-  local target=$1 grace=${JOSUI_WATCHDOG_GRACE:-300} interval=${JOSUI_WATCHDOG_INTERVAL:-60}
+  local target=$1 log_file=$2
+  local grace=${JOSUI_WATCHDOG_GRACE:-300} interval=${JOSUI_WATCHDOG_INTERVAL:-60}
   local down=0 max_bytes=${JOSUI_DEBUG_MAX_BYTES:-67108864}
   while sleep "$interval"; do
-    # The debug file below is the only thing here that grows without bound.
-    if [ -n "$debug_file" ] && [ "$(stat -c %s "$debug_file" 2>/dev/null || echo 0)" -gt "$max_bytes" ]; then
-      : > "$debug_file"
-      log "truncated $debug_file at $max_bytes bytes"
+    # The debug file is the only thing here that grows without bound, and this
+    # is the one loop already running, so it does the capping. It is passed in
+    # rather than read from the global: the caller decides whether there is one.
+    if [ -n "$log_file" ] && [ "$(stat -c %s "$log_file" 2>/dev/null || echo 0)" -gt "$max_bytes" ]; then
+      : > "$log_file"
+      log "truncated $log_file at $max_bytes bytes"
     fi
     if [ "$(egress_connections "$target")" -gt 0 ]; then
       down=0
@@ -234,7 +261,7 @@ pids=()
 claude "${server_args[@]}" > /dev/null &
 pids+=($!)
 if [ -n "${HTTPS_PROXY:-}" ] && egress_target=$(proxy_endpoint_hex "$HTTPS_PROXY"); then
-  egress_watchdog "$egress_target" &
+  egress_watchdog "$egress_target" "$debug_file" &
   pids+=($!)
 elif [ -n "${HTTPS_PROXY:-}" ]; then
   log "HTTPS_PROXY is not a plain address, running without the egress watchdog"
