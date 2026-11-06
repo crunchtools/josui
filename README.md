@@ -5,13 +5,15 @@ only; who the agent is and what it may touch are mounted in at run time, so
 one image serves a long-running instance on a server and any copy run elsewhere.
 
 The operator reaches it over [Remote Control](https://code.claude.com/docs/en/remote-control)
-from claude.ai/code or the phone app. Nothing listens for inbound connections.
+from claude.ai/code or the phone app. Nothing listens for inbound connections —
+the only ssh in the image is a client, for the [fallback](#fallback-into-the-host).
 
 ## What goes in
 
 | Mount | Container path | What it is |
 |-------|----------------|------------|
 | state | `/home/josui` | Claude login, sessions, git identity. The only writable home. |
+| ssh | `/etc/josui/ssh` (read-only) | A private key, `config` and `known_hosts` for the [fallback](#fallback-into-the-host). Absent on a copy run elsewhere, and then there is no fallback. |
 | identity | `/etc/josui` (read-only) | `CLAUDE.md`, `settings.json`. Private; kept in the host's config repo. Hooks here are ignored: only the image's managed hooks run. |
 | skills | `/var/lib/josui/josui-skills` | A git checkout of the skills repo, pulled at start. |
 | audit | `/var/log/josui` | One JSON line per tool call. |
@@ -40,6 +42,45 @@ The container sits on an internal network with no DNS. Its only peer is the
   route with the gateway token, and includes it from the global git config.
   There is no `gh` and no GitHub credential in the container; the gateway
   holds the token.
+
+## Fallback into the host
+
+Every tool this agent has arrives through the gateway. So when the gateway is
+down the agent has **no tools at all** — not even the systemd tools that would
+restart it — and the agent cannot report that, because the thing it would report
+through is the thing that is down. That is the gap this fills, and it is a
+measured failure, not a hypothetical: a gateway restart leaves every client's
+MCP session dead while the agent looks healthy from every other angle.
+
+Mount a key, an ssh `config` and a `known_hosts` at `/etc/josui/ssh` and the
+entrypoint copies them into `~/.ssh` at mode 0600 — copied rather than pointed
+at, because ssh refuses a private key that anyone else can read and the mode on
+a bind mount is whichever one the host set. There is **no sshd in this image**;
+this is outbound only.
+
+The image supplies the mechanism and nothing else. Which host, which account
+and which key are in the mount, because they are facts about one deployment:
+
+```
+# /etc/josui/ssh/config
+Host gloval
+  HostName 10.89.13.1          # the host's address on the agent's own bridge
+  Port 22422
+  User <the account the key authorizes>
+  IdentityFile /home/josui/.ssh/id_ed25519
+  StrictHostKeyChecking yes
+  UserKnownHostsFile /home/josui/.ssh/known_hosts
+```
+
+An internal network does not route to the host by default, and a host firewall
+may drop it besides, so the path needs opening on purpose at the deployment —
+which is the point: the fallback exists where someone decided it should, and
+nowhere else.
+
+What it costs is worth stating plainly. Output read over ssh has not been
+through the gateway's judgement, unlike every MCP tool result, and an ssh
+session is logged by sshd and the host rather than by the gateway's audit. A
+deployment that takes this on should say so in its constitution.
 
 ## Controls
 

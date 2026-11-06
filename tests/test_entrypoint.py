@@ -306,6 +306,65 @@ class EntrypointTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("no tmux-that-is-not-installed in this image", result.stderr)
 
+    def fake_ssh(self) -> Path:
+        ssh = self.root / "bin/ssh"
+        ssh.write_text("#!/bin/bash\nexit 0\n")
+        ssh.chmod(0o755)
+        return ssh
+
+    def seed_ssh_mount(self, *, known_hosts: bool = True) -> Path:
+        src = self.config / "ssh"
+        src.mkdir()
+        # The mount is the host's: world-readable is exactly what we expect.
+        key = src / "id_ed25519"
+        key.write_text("PRIVATE KEY\n")
+        key.chmod(0o644)
+        (src / "config").write_text("Host gloval\n  Port 22422\n")
+        if known_hosts:
+            (src / "known_hosts").write_text("[gloval]:22422 ssh-ed25519 AAAA\n")
+        return src
+
+    def test_no_ssh_identity_unless_one_is_mounted(self) -> None:
+        self.fake_ssh()
+        self.assertEqual(self.run_entrypoint().returncode, 0)
+        self.assertFalse((self.home / ".ssh").exists())
+
+    def test_a_mounted_ssh_identity_is_copied_in_private(self) -> None:
+        self.fake_ssh()
+        self.seed_ssh_mount()
+        result = self.run_entrypoint()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        dest = self.home / ".ssh"
+        self.assertEqual(stat.S_IMODE(dest.stat().st_mode), 0o700)
+        for name in ("id_ed25519", "config", "known_hosts"):
+            self.assertEqual(stat.S_IMODE((dest / name).stat().st_mode), 0o600, name)
+        self.assertEqual((dest / "id_ed25519").read_text(), "PRIVATE KEY\n")
+        # Copied, not linked: the agent's home must not depend on the mount.
+        self.assertFalse((dest / "id_ed25519").is_symlink())
+
+    def test_an_ssh_mount_without_a_key_is_reported_not_fatal(self) -> None:
+        self.fake_ssh()
+        (self.config / "ssh").mkdir()
+        (self.config / "ssh/known_hosts").write_text("host key\n")
+        result = self.run_entrypoint()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("no private key", result.stderr)
+
+    def test_a_key_without_known_hosts_is_called_out(self) -> None:
+        self.fake_ssh()
+        self.seed_ssh_mount(known_hosts=False)
+        result = self.run_entrypoint()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("no known_hosts", result.stderr)
+
+    def test_an_ssh_identity_with_no_ssh_in_the_image_is_reported_not_fatal(self) -> None:
+        self.seed_ssh_mount()
+        env = {**self.env, "JOSUI_SSH_CMD": "ssh-that-is-not-installed"}
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("there is no ssh-that-is-not-installed in this image", result.stderr)
+        self.assertFalse((self.home / ".ssh/id_ed25519").exists())
+
     def test_without_a_homeserver_there_is_no_text_session(self) -> None:
         agent = self.root / "bin/claude-agent"
         agent.write_text('#!/bin/bash\ntouch "$HOME/agent-ran"\n')
