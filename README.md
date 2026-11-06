@@ -115,10 +115,61 @@ question answered once: `podman exec -it <service> claude-agent attach --rw`.
 | `JOSUI_MATRIX_TOKEN_FILE` | `/etc/josui-matrix/token` | The agent account's access token, in a read-only mount. |
 | `JOSUI_MATRIX_ALLOW` | unset | Comma list of the exact Matrix IDs whose messages reach the session. Empty lets nothing through. |
 | `JOSUI_MAX_TOOL_CALLS`, `JOSUI_MAX_REPEAT` | `500`, `5` | Circuit breakers. |
+| `JOSUI_WATCHDOG_GRACE`, `JOSUI_WATCHDOG_INTERVAL` | `300`, `60` | Seconds with nothing connected to `HTTPS_PROXY` before the container ends so the unit restarts it, and how often that is checked. Skipped entirely when `HTTPS_PROXY` is unset. |
+| `JOSUI_DEBUG_FILE` | audit dir + `/remote-control.log` | Remote Control's `--debug-file`. Emptied at each start, truncated at `JOSUI_DEBUG_MAX_BYTES` (64 MiB). |
+| `JOSUI_TMUX` | unset | `1` starts a detached tmux session `dev` holding an interactive Claude Code. See [Attaching](#attaching). |
 | `JOSUI_AUDIT_RETENTION_DAYS` | `120` | Age at which an audit file is deleted at start. |
 | `JOSUI_AUDIT_DIR` | set in the image | Where audit files are written; mount a volume there. |
 | `JOSUI_BREAKER_DIR` | set in the image | Per-conversation breaker state, on the tmpfs. |
 | `JOSUI_CONFIG_DIR`, `JOSUI_SKILLS_DIR` | set in the image | Where the identity and skills mounts are read from. |
+
+## Attaching
+
+Remote Control is how the agent is reached from claude.ai and the phone. For a
+copy that is worked *in* -- the `josui-dev` image below -- there is a terminal:
+
+```bash
+podman exec -it <service> tmux attach -t dev     # JOSUI_TMUX=1
+podman exec -it <service> claude-agent attach    # the supervised session, read-only
+```
+
+tmux follows the attaching terminal's size and survives the disconnect;
+`claude-agent attach` renders the supervised session at the size its
+supervisor set. The tmux session is deliberately not watched: quitting your
+own shell must not end the container. Quitting Claude Code in window 0 leaves
+the pane for `prefix + :respawn-pane`.
+
+## What the agent cannot see go wrong
+
+Remote Control can keep running with no connection at all. It happened on
+2026-11-05: the gateway restarted, the client never came back, and the
+container looked healthy for nineteen hours -- the process was alive, its
+stdout goes to `/dev/null`, and `Restart=always` only fires when something
+exits. So the entrypoint watches `/proc/net/tcp` for an ESTABLISHED
+connection to the client egress and ends the container when there has been
+none for `JOSUI_WATCHDOG_GRACE`. Session failures that are not visible from
+outside -- a workdir that is a git checkout makes Anthropic refuse every
+session with an HTTP 400 -- land in the `--debug-file`.
+
+## josui-dev
+
+`Containerfile.dev` builds `quay.io/crunchtools/josui-dev`: the same agent,
+the same entrypoint and the same mount contract, plus python 3.14, `uv`,
+node, `pre-commit`, tmux and a nested container engine, so an agent in it can
+run a repo's real gates rather than wait for CI to render them.
+
+It is **less contained than this image, deliberately**. Nested rootless
+podman needs `--device /dev/fuse`, `--security-opt label=disable`, podman's
+default capabilities (`newuidmap` acquires its privilege through a file
+capability, which `--cap-drop=all` prevents) and writable container storage.
+Its base is `quay.io/podman/stable`, not UBI: UBI 10 fails a nested `podman
+run` with "mount `proc` to `proc`: Operation not permitted", measured in
+[gha-runner](https://github.com/crunchtools/gha-runner)'s Containerfile.
+
+So a dev copy gets its own Trentina profile, mounts no production data, and
+holds nothing a production agent holds. uid 1000 stays the base image's
+`podman` user, because its subuid layout is what makes nesting work; `HOME`
+is `/home/podman`.
 
 ## Development
 

@@ -306,6 +306,47 @@ class EntrypointTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("not a plain address", result.stderr)
 
+    # The person's own terminal (JOSUI_TMUX), with a tmux that records its
+    # arguments and reports no existing session.
+    def fake_tmux(self) -> None:
+        tmux = self.root / "bin/tmux"
+        tmux.write_text(
+            '#!/bin/bash\nprintf "%s\\n" "$*" >> "$HOME/tmux-args"\n'
+            '[ "$1" = has-session ] && exit 1\nexit 0\n'
+        )
+        tmux.chmod(0o755)
+
+    def test_tmux_session_is_started_when_asked(self) -> None:
+        self.fake_tmux()
+        result = self.run_entrypoint(env={**self.env, "JOSUI_TMUX": "1"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = (self.home / "tmux-args").read_text().splitlines()
+        self.assertEqual(calls[0], "has-session -t dev")
+        self.assertEqual(
+            calls[1],
+            f"new-session -d -s dev -c {self.home / 'work'} claude --permission-mode acceptEdits",
+        )
+        self.assertIn("set-option -t dev remain-on-exit on", calls)
+        self.assertIn("tmux session 'dev' is up", result.stderr)
+
+    def test_an_existing_tmux_session_is_left_alone(self) -> None:
+        tmux = self.root / "bin/tmux"
+        tmux.write_text('#!/bin/bash\nprintf "%s\\n" "$*" >> "$HOME/tmux-args"\nexit 0\n')
+        tmux.chmod(0o755)
+        self.run_entrypoint(env={**self.env, "JOSUI_TMUX": "1"})
+        self.assertEqual((self.home / "tmux-args").read_text().splitlines(), ["has-session -t dev"])
+
+    def test_no_tmux_session_unless_it_is_asked_for(self) -> None:
+        self.fake_tmux()
+        self.assertEqual(self.run_entrypoint().returncode, 0)
+        self.assertFalse((self.home / "tmux-args").exists())
+
+    def test_tmux_missing_from_the_image_is_reported_not_fatal(self) -> None:
+        env = {**self.env, "JOSUI_TMUX": "1", "JOSUI_TMUX_CMD": "tmux-that-is-not-installed"}
+        result = self.run_entrypoint(env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("no tmux-that-is-not-installed in this image", result.stderr)
+
     def test_without_a_homeserver_there_is_no_text_session(self) -> None:
         agent = self.root / "bin/claude-agent"
         agent.write_text('#!/bin/bash\ntouch "$HOME/agent-ran"\n')

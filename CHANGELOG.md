@@ -6,6 +6,36 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-05
+
+### Added
+
+- `josui-dev` (`Containerfile.dev`, `quay.io/crunchtools/josui-dev`): the same
+  agent with a development toolchain -- python 3.14, `uv`, node, `pre-commit`,
+  tmux -- and a nested container engine, so it can run a repo's real gates
+  locally. On `quay.io/podman/stable`, because UBI 10 cannot run a nested
+  `podman run`. Less contained than the production image, and the README says
+  how and why.
+- `JOSUI_TMUX=1` starts a detached tmux session `dev` holding an interactive
+  Claude Code, reached with `podman exec -it <service> tmux attach -t dev`. It
+  follows the attaching terminal's size, which `claude-agent attach` does not,
+  and it is not watched: quitting your own shell must not end the container.
+
+### Fixed
+
+- Remote Control losing its connection no longer goes unnoticed. On 2026-11-05
+  the Josui Prime container ran for nineteen hours with a live
+  `claude remote-control` holding zero sockets, after the gateway restarted
+  and the client failed to come back; nothing alerted, because the process was
+  alive, its stdout goes to `/dev/null` and `Restart=always` only fires when
+  something exits. The entrypoint now watches `/proc/net/tcp` for an
+  ESTABLISHED connection to the client egress and ends the container after
+  `JOSUI_WATCHDOG_GRACE` (300s) without one. Skipped when `HTTPS_PROXY` is
+  unset, so a laptop copy is unaffected.
+- Remote Control's `--debug-file` is kept under the audit directory instead of
+  being discarded. The session-creation failure diagnosed on 2026-10-11 was
+  only ever visible there.
+
 ## [0.5.1] - 2026-10-21
 
 ### Fixed

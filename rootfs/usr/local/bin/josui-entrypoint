@@ -172,6 +172,33 @@ egress_watchdog() {
   done
 }
 
+# A person's own terminal inside the container, for a copy that is worked in
+# rather than only texted and driven from the app:
+#
+#   podman exec -it <service> tmux attach -t dev
+#
+# tmux rather than `claude-agent attach --rw`, which renders the supervised
+# session at the fixed size the supervisor set rather than the attaching
+# terminal's. Deliberately NOT in the pid list below: someone exiting their
+# own shell must not take the container down with it.
+start_tmux_session() {
+  local tmux=${JOSUI_TMUX_CMD:-tmux}
+  if ! command -v "$tmux" > /dev/null 2>&1; then
+    log "JOSUI_TMUX is set but there is no $tmux in this image"
+    return
+  fi
+  if "$tmux" has-session -t dev 2>/dev/null; then
+    return
+  fi
+  "$tmux" new-session -d -s dev -c "$workdir" \
+    claude --permission-mode "${JOSUI_PERMISSION_MODE:-acceptEdits}"
+  # Quitting Claude Code leaves the pane to be respawned (prefix + :respawn-pane)
+  # instead of ending the session and losing the window layout with it.
+  "$tmux" set-option -t dev remain-on-exit on 2>/dev/null || true
+  "$tmux" new-window -d -t dev -c "$workdir" 2>/dev/null || true
+  log "tmux session 'dev' is up: podman exec -it <service> tmux attach -t dev"
+}
+
 cd "$workdir"
 # Remote Control redraws a terminal status screen on stdout every second.
 # Under a container runtime that is a line a second into the journal, so
@@ -215,6 +242,9 @@ fi
 if [ -n "$session" ]; then
   claude-agent run -- --permission-mode "${JOSUI_PERMISSION_MODE:-acceptEdits}" &
   pids+=($!)
+fi
+if [ -n "${JOSUI_TMUX:-}" ]; then
+  start_tmux_session
 fi
 trap 'kill "${pids[@]}" 2>/dev/null' TERM INT
 status=0
