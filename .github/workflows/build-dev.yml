@@ -1,6 +1,12 @@
-name: Build and Push Josui Dev
+name: Build and Push Developer
 
-# The development variant (Containerfile.dev). Same triggers as build.yml,
+# The development agent image (Containerfile.dev). It is published as
+# `developer`, not `josui-dev`: these containers are not a Josui variant.
+# josui.crunchtools.com is one agent that operates the fleet;
+# developer1-3 are three that build it, with their own Trentina profile,
+# their own identity and no production data. They share this repo because
+# they share its entrypoint and mount contract, which is an implementation
+# detail rather than a claim about who they are. Same triggers as build.yml,
 # minus the tag release: this image is a build machine for agents, not a
 # shipped artifact, so it tracks main and the fleet's weekly pulse.
 #
@@ -32,8 +38,8 @@ on:
   workflow_dispatch:
 
 env:
-  QUAY_IMAGE: quay.io/crunchtools/josui-dev
-  GHCR_IMAGE: ghcr.io/crunchtools/josui-dev
+  QUAY_IMAGE: quay.io/crunchtools/developer
+  GHCR_IMAGE: ghcr.io/crunchtools/developer
 
 jobs:
   build-and-push-quay:
@@ -66,7 +72,7 @@ jobs:
           context: .
           file: ./Containerfile.dev
           load: true
-          tags: josui-dev:scan
+          tags: developer:scan
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -80,7 +86,7 @@ jobs:
         run: |
           docker run --rm --entrypoint /bin/bash \
             --device /dev/fuse --security-opt label=disable \
-            josui-dev:scan -c '
+            developer:scan -c '
             set -euxo pipefail
             claude --version
             claude-agent --version
@@ -104,7 +110,7 @@ jobs:
       - name: Trivy full CVE report (all severities, non-blocking)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: josui-dev:scan
+          image-ref: developer:scan
           format: "table"
           exit-code: "0"
           severity: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
@@ -113,7 +119,7 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: josui-dev:scan
+          image-ref: developer:scan
           format: "table"
           exit-code: "1"
           severity: "CRITICAL,HIGH"
@@ -124,16 +130,16 @@ jobs:
       - name: Generate SBOM (Trivy / SPDX-JSON)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: josui-dev:scan
+          image-ref: developer:scan
           format: "spdx-json"
-          output: "josui-dev-sbom.spdx.json"
+          output: "developer-sbom.spdx.json"
           exit-code: "0"
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@v7
         with:
-          name: josui-dev-sbom-${{ steps.version.outputs.sha_short }}
-          path: josui-dev-sbom.spdx.json
+          name: developer-sbom-${{ steps.version.outputs.sha_short }}
+          path: developer-sbom.spdx.json
           retention-days: 90
 
       - name: Log in to Quay.io
@@ -155,7 +161,7 @@ jobs:
             ${{ env.QUAY_IMAGE }}:${{ steps.version.outputs.tag }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.description=josui-dev - Josui with a development toolchain and nested podman
+            org.opencontainers.image.description=developer - a crunchtools development agent: Claude Code with a toolchain and nested podman
             org.opencontainers.image.licenses=AGPL-3.0-or-later
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
@@ -205,7 +211,7 @@ jobs:
             ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.tag }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.description=josui-dev - Josui with a development toolchain and nested podman
+            org.opencontainers.image.description=developer - a crunchtools development agent: Claude Code with a toolchain and nested podman
             org.opencontainers.image.licenses=AGPL-3.0-or-later
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha

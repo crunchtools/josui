@@ -1,9 +1,18 @@
-# josui-dev — Josui's development variant: a Claude Code agent that can build
+# developer — a crunchtools development agent: Claude Code that can build
 #
-# Same agent as the production image, same entrypoint, same mount contract
-# (README.md). What it adds is a toolchain: python, uv, node, tmux, and a
-# container engine, so an agent working in it can run a repo's real gates
-# instead of waiting for CI to render them.
+# Published as `developer`, NOT as a Josui variant. josui.crunchtools.com is
+# one agent that operates the fleet; developer1-3 are three that build it,
+# with their own Trentina profile, their own identity and no production data.
+#
+# It is built here because it still shares this repo's entrypoint and mount
+# contract (README.md), which is an implementation detail rather than a claim
+# about who it is. That sharing is expected to end: when this image diverges
+# from josui, the build moves to crunchtools/developer and the image name does
+# not change, because the name is already right (RT#1556).
+#
+# What it adds on top: a toolchain — python, uv, node, tmux — and a container
+# engine, so an agent working in it can run a repo's real gates instead of
+# waiting for CI to render them.
 #
 # WHY A DIFFERENT BASE, AND NOT `FROM josui`: a dev agent has to RUN
 # containers, not only build them -- `sdlc` launches every check inside
@@ -44,7 +53,7 @@
 FROM quay.io/podman/stable@sha256:0ccbc4e7f79f9c33e7fc959be59f714abbc0f4c9cffbe14f5bceff537a014738
 
 LABEL maintainer="fatherlinux <scott.mccarty@crunchtools.com>"
-LABEL description="josui-dev - Josui with a development toolchain and nested podman"
+LABEL description="developer - a crunchtools development agent: Claude Code with a toolchain and nested podman"
 
 # The same versions the production image runs. A new Claude Code or
 # claude-agent is tested on Josui Prime before it reaches a dev container:
