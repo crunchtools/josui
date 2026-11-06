@@ -125,7 +125,7 @@ question answered once: `podman exec -it <service> claude-agent attach --rw`.
 ## Attaching
 
 Remote Control is how the agent is reached from claude.ai and the phone. For a
-copy that is worked *in* -- the `josui-dev` image below -- there is a terminal:
+copy that is worked *in* -- the `developer` image below -- there is a terminal:
 
 ```bash
 podman exec -it <service> tmux attach -t dev     # JOSUI_TMUX=1
@@ -164,10 +164,13 @@ debug file does not grow while idle either. There is no cheap local signal for
 "the bridge is alive", and the one failure actually observed was not a
 connectivity failure at all.
 
-## josui-dev
+## developer
 
-`Containerfile.dev` builds `quay.io/crunchtools/josui-dev`: the same agent,
-the same entrypoint and the same mount contract, plus python 3.14, `uv`,
+`Containerfile.dev` builds `quay.io/crunchtools/developer`, which runs as
+developer1-3 on gloval. It is NOT a Josui: this agent builds the fleet, Josui
+Prime operates it, and they have different Trentina profiles, different
+identities and different reach. What they share is this repo's entrypoint and
+mount contract. On top of those it has python 3.14, `uv`,
 node, `pre-commit`, tmux and a nested container engine, so an agent in it can
 run a repo's real gates rather than wait for CI to render them.
 

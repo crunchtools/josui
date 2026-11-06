@@ -1,6 +1,6 @@
 # josui Constitution
 
-> **Version:** 1.3.0
+> **Version:** 1.4.0
 > **Ratified:** 2026-10-11
 > **Status:** Active
 > **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.31.0
@@ -80,13 +80,16 @@ whatever was there.
   run as root, and two owners in one git checkout break it for both. The
   process holds no capabilities on either side of the mapping.
 
-### The development image (`josui-dev`)
+### The development image (`developer`)
 
 `Containerfile.dev` builds a second image for agents that develop rather than
-operate: `quay.io/crunchtools/josui-dev`, the same entrypoint and mount
-contract plus python 3.14, `uv`, node, `pre-commit`, tmux and a nested
-container engine, so an agent can render a repo's own gates instead of
-waiting for CI.
+operate: `quay.io/crunchtools/developer`, which runs as developer1-3 on gloval.
+It is NOT a Josui: it has its own Trentina profile, its own identity and no
+production data, and it is published under its own name. What it shares with
+this image is the entrypoint and mount contract, plus python 3.14, `uv`, node,
+`pre-commit`, tmux and a nested container engine, so an agent can render a
+repo's own gates instead of waiting for CI. The sharing is expected to end; the
+build then moves to `crunchtools/developer` and the image name does not change.
 
 - **Base:** `quay.io/podman/stable`, pinned by digest, the same digest
   gha-runner runs. Not UBI: UBI 10 fails a nested `podman run` with "mount
@@ -179,7 +182,7 @@ the host's monitoring configuration.
   the mounts, the read-only root, the internal network and the approval
   prompt, not by removing them.
 
-- **SELinux labelling off in `josui-dev` containers.** The profile requires
+- **SELinux labelling off in `developer` containers.** The profile requires
   SELinux enforcing with labelled mounts. A `label=disable` container runs
   unconfined for container purposes, so this is a deviation in substance
   whatever the host's `getenforce` says. It is required: with labels on, a
@@ -223,5 +226,6 @@ the host's monitoring configuration.
 | 1.0.1 | 2026-10-13 | Human in the loop: the hook that holds the no-prompt deviation when the app sets the mode |
 | 1.0.2 | 2026-10-14 | Human in the loop: the allow hook answers in plan mode too; plan approval stays the gate; declined calls are logged |
 | 1.1.0 | 2026-10-14 | GitHub only through the gateway (no gh, no credential); the allow hook and memory guard ship in the image; managed hooks only; web tools denied in managed settings. Inherits v1.26.0 |
-| 1.2.0 | 2026-11-05 | The development image (`josui-dev`): its base, its measured five-capability set, its unprivileged UID mapping, and the recorded `label=disable` deviation with what replaces SELinux and what is lost. Trivy does not scan Fedora OS packages; `dnf -y upgrade` plus the weekly rebuild is that layer's only control. RT#1556 |
+| 1.2.0 | 2026-11-05 | The development image (`developer`): its base, its measured five-capability set, its unprivileged UID mapping, and the recorded `label=disable` deviation with what replaces SELinux and what is lost. Trivy does not scan Fedora OS packages; `dnf -y upgrade` plus the weekly rebuild is that layer's only control. RT#1556 |
 | 1.3.0 | 2026-11-06 | Liveness: Remote Control polls and its debug file is quiet while idle, so there is no local signal for bridge liveness; the 0.6.0 socket watchdog is removed and a session that does not appear is diagnosed from the --debug-file. RT#1556 |
+| 1.4.0 | 2026-11-06 | The development image is published as `developer`, not `josui-dev`: it is a different agent from Josui Prime, with its own profile, identity and reach, and the name said otherwise. RT#1556 |

@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-06
+
+### Changed
+
+- **The development image is published as `developer`, not `josui-dev`.** It is
+  not a Josui variant and should never have read as one: `josui.crunchtools.com`
+  is one agent that operates the fleet, and developer1-3 are three that build
+  it, with their own Trentina profile, their own identity and no production
+  data. Scott created `quay.io/crunchtools/developer`; `ghcr.io/crunchtools/developer`
+  follows. The old names stop being published.
+- It is still built here, because it still shares this repo's entrypoint and
+  mount contract — an implementation detail, not a claim about who it is. That
+  sharing is expected to end, and when the image diverges the build moves to
+  `crunchtools/developer` with no change to the image name, because the name is
+  already right. RT#1556.
+
 ## [0.7.0] - 2026-11-06
 
 ### Removed
@@ -33,7 +49,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- `josui-dev` (`Containerfile.dev`, `quay.io/crunchtools/josui-dev`): the same
+- `developer` (`Containerfile.dev`, `quay.io/crunchtools/developer`): the same
   agent with a development toolchain -- python 3.14, `uv`, node, `pre-commit`,
   tmux -- and a nested container engine, so it can run a repo's real gates
   locally. On `quay.io/podman/stable`, because UBI 10 cannot run a nested
