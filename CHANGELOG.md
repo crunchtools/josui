@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-06
+
+### Removed
+
+- `Containerfile.dev` and `build-dev.yml`. The development agent image lives in
+  [crunchtools/developer](https://github.com/crunchtools/developer) now, which
+  has published it once from there, and still publishes the same names. It
+  began from this image's entrypoint and mount contract and is expected to
+  diverge from them, which is why it left. RT#1556.
+
 ## [0.8.0] - 2026-11-06
 
 ### Changed
