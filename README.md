@@ -77,10 +77,27 @@ may drop it besides, so the path needs opening on purpose at the deployment —
 which is the point: the fallback exists where someone decided it should, and
 nowhere else.
 
-What it costs is worth stating plainly. Output read over ssh has not been
-through the gateway's judgement, unlike every MCP tool result, and an ssh
-session is logged by sshd and the host rather than by the gateway's audit. A
-deployment that takes this on should say so in its constitution.
+**The account the key authorizes is the whole security decision**, and this
+image does not make it. Two shapes, with everything in between:
+
+- A **forced-command principal**: `restrict` on the key, `command=` running a
+  script that validates its own argument, and a sudoers list of the handful of
+  binaries that script calls. No pty, no shell, no verb that writes anything
+  the emergency does not need. Sized to the emergency, not to the agent.
+- **Root**, or an account with full sudo. Sized to what the agent actually
+  does on that host, for a deployment where the mediated path cannot carry the
+  work.
+
+What it costs is worth stating plainly, and the cost scales with that choice.
+Output read over ssh has not been through the gateway's judgement, unlike
+every MCP tool result, and an ssh session is logged by sshd and the host
+rather than by the gateway's audit. A forced command narrows what can be done
+and logs each invocation itself; without one, sshd records that a session
+opened and which key opened it, and nothing records what was run. An account
+with sudo rather than root at least puts every privileged command in syslog.
+
+A deployment that takes this on should say so in its constitution, and say
+which shape it took.
 
 ## Controls
 
