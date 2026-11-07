@@ -1,6 +1,6 @@
 # josui Constitution
 
-> **Version:** 1.6.0
+> **Version:** 2.0.0
 > **Ratified:** 2026-10-11
 > **Status:** Active
 > **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.31.0
@@ -153,31 +153,53 @@ the host's monitoring configuration.
   the mounts, the read-only root, the internal network and the approval
   prompt, not by removing them.
 
-- **An ssh key to the host, on a path the gateway does not see.**
-  `josui.crunchtools.com` holds an ssh key to gloval as `josui-rescue`, a
-  forced-command principal that can list, inspect, start and restart
-  `*.crunchtools.com.service` units and read their journals, and nothing else.
-  It reaches sshd over the agent's own internal bridge (10.89.13.10 →
-  10.89.13.1:22422), opened by one nftables accept rule ahead of that
-  network's drop; the host's public interface is not involved and there is no
-  sshd in the container.
+- **An ssh key to the host, as root, on a path the gateway does not see.**
+  `josui.crunchtools.com` holds an ssh key to gloval as **root**: no forced
+  command, no `restrict`, a pty if it asks for one. The one restriction kept
+  is `from="10.89.13.10"`, the agent's address on its own internal bridge,
+  which nothing else is on; it reaches sshd at 10.89.13.1:22422 through one
+  nftables accept rule ahead of that network's drop, the host's public
+  interface is not involved, and there is no sshd in the container.
 
-  This exists because the one unit the operator role is forbidden to restart
-  over MCP is the Trentina gateway itself, and when the gateway is down the
-  agent has no MCP tools at all — so the rescue path is sized to that
-  emergency rather than to the agent's full mediated authority. The principle:
-  mediated authority is sized to the job, unmediated authority is sized to the
-  emergency. The operator role is root-equivalent on this host only because
-  the gateway logs every call and judges every byte that comes back; putting
-  that same breadth on a channel with neither would move the agent's widest
-  power onto its least observed path.
+  **This supersedes the forced-command principal of 1.6.0, and it is a
+  retirement of that version's stated principle, not a widening of it.** What
+  1.6.0 said, and what remains true as an argument:
 
-  What is lost, plainly: this channel is not judged or logged by Trentina.
-  Output comes back to the model unjudged, and the only record is sshd plus
-  the dispatcher's own journal line. That is why it carries no pty, no shell
-  and no verb that writes anything but a unit's run state. A verb the script
-  lacks is added by pull request, with the journal entry showing why — the
-  list grows from evidence, not from granting a shell in advance.
+  > mediated authority is sized to the job, unmediated authority is sized to
+  > the emergency. The operator role is root-equivalent on this host only
+  > because the gateway logs every call and judges every byte that comes
+  > back; putting that same breadth on a channel with neither would move the
+  > agent's widest power onto its least observed path.
+
+  That is exactly what this version does, deliberately, because the premise it
+  rested on no longer holds. The principle assumed a mediated path wide enough
+  to do the work, with the unmediated one kept for the emergency. RT#1568 built
+  that mediated path — linux-mcp-server on the host, reached only through the
+  gateway — and its write half does not function: upstream's guarded command
+  execution cannot reach its gatekeeper, from inside its own process, with any
+  provider, to the internet or the LAN. What survives is read-only diagnostics.
+  An agent that can read a production host in detail and change nothing on it
+  is not the agent this deployment is for. Operator's decision, 2026-11-07.
+
+  What is lost, plainly, and it is more than 1.6.0 lost. This channel is not
+  judged by Trentina and is not in its audit table: output returns to the model
+  unjudged. And where the forced command wrote a journal line per invocation
+  and could only do five things, root with no forced command leaves sshd's
+  record that a session opened and which key opened it, and **no record of
+  what was run**. An account with full sudo rather than root would at least
+  have put each privileged command in syslog; root does not.
+
+  What is left holding it: the `from=` pin, strict host key checking, the
+  absence of any route from the container to the host's public interface, and
+  the fact that both `/etc/josui-ssh/config` and `/root/.ssh/authorized_keys`
+  are now under `/srv` and watched for drift — the files deciding which
+  account the agent authenticates as, and who is root on that host, were
+  unversioned before this change.
+
+  The honest summary: the agent's widest power is now on its least observed
+  path, the thing 1.6.0 was written to prevent. Reversing it is one line in
+  `/root/.ssh/authorized_keys`, and `/root/josui-rescue-removed-*` on gloval
+  holds the forced command and sudoers that were taken out.
 
   Reversible by removing one `authorized_keys` line, one nftables rule, one
   sudoers file, one script and one user.
@@ -215,8 +237,8 @@ the host's monitoring configuration.
 |-----------|-------|
 | Container name | `<service>`, the host's name for this instance |
 | Port | none inbound; outbound ssh to the host's address on the agent's own bridge |
-| Host directory | `/srv/<service>/` (`config/` identity, `config/identity/ssh` the rescue key, and env, `data/state`, `data/audit`, `data/josui-skills`) |
-| Interface | Claude Code Remote Control, and the `josui-rescue` forced command over ssh when the gateway is down |
+| Host directory | `/srv/<service>/` (`config/` identity, `config/ssh` the client config and known_hosts, and env, `data/state`, `data/audit`, `data/josui-skills`) |
+| Interface | Claude Code Remote Control, and root over ssh on the agent's own bridge |
 
 ## History
 
@@ -231,3 +253,4 @@ the host's monitoring configuration.
 | 1.4.0 | 2026-11-06 | The development image is published as `developer`, not `josui-dev`: it is a different agent from Josui Prime, with its own profile, identity and reach, and the name said otherwise. RT#1556 |
 | 1.5.0 | 2026-11-06 | The development image moved to crunchtools/developer, with its own constitution; what is left here is a pointer. RT#1556 |
 | 1.6.0 | 2026-11-06 | An ssh key to gloval as `josui-rescue`, forced command, over the agent's own internal bridge: the gateway's protected-unit list refuses `unit_restart` on the gateway, and a gateway that is down leaves the agent with no tools to fix it with. Sized to that emergency, not to the operator role; unjudged and unaudited by Trentina, so no pty, no shell, no writing verb. RT#1556 |
+| 2.0.0 | 2026-11-07 | Root on gloval over ssh, replacing the `josui-rescue` forced command. MAJOR because it retires 1.6.0's principle that unmediated authority is sized to the emergency: RT#1568's mediated write path does not work (upstream's gatekeeper cannot reach any provider from inside its own process), so the unmediated path is sized to the agent instead. Pinned to `from=10.89.13.10`; no forced command means no per-command record. Operator's decision. RT#1568 |

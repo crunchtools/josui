@@ -6,6 +6,34 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- **The ssh fallback is root, not a forced command** (RT #1568). The key into
+  gloval authenticated as `josui-rescue`, a forced-command principal with five
+  verbs against `*.crunchtools.com.service` and nothing else, sized to one
+  emergency: a gateway that is down takes every MCP tool with it, including
+  the ones that would restart it. It is now literal root, pinned to
+  `from="10.89.13.10"`.
+
+  The mediated write path that was supposed to make the narrow one sufficient
+  does not work. linux-mcp-server's guarded command execution cannot reach its
+  gatekeeper from inside its own serving process — any provider, internet or
+  LAN — so what it offers is read-only diagnostics. An agent that can read a
+  production host in detail and change nothing on it is not what this
+  deployment is for. Operator's decision.
+
+  The constitution is amended to **2.0.0** rather than quietly contradicted:
+  1.6.0 stated that unmediated authority is sized to the emergency and warned
+  in terms against moving the agent's widest power onto its least observed
+  path. That is what this does, so the amendment keeps the warning in place as
+  superseded reasoning and records what is given up — with no forced command,
+  sshd logs that a session opened and which key opened it, and nothing logs
+  what was run.
+
+  The image is unchanged. Which account the key authorizes was always a
+  deployment fact, and the README now says so, with the two shapes and what
+  each costs.
+
+
 ### Fixed
 
 - **Logging in a container that is not logged in.** The README told you to
