@@ -170,6 +170,13 @@ where `script` alone does not -- it stops forwarding after its stdin first
 reports EOF:
 
 ```bash
+# script -c takes one command, so save the `podman run` above as a file.
+install -m 755 /dev/stdin /tmp/login.sh <<'SH'
+#!/bin/bash
+exec podman run --rm -it <the options above> \
+  --entrypoint claude quay.io/crunchtools/josui:latest auth login
+SH
+
 mkfifo /tmp/login.fifo
 setsid bash -c 'exec 9<>/tmp/login.fifo; script -qfc /tmp/login.sh /tmp/login.log <&9' &
 grep -ao 'https://claude.com/cai/oauth/authorize[^ ]*' /tmp/login.log   # open this, approve
