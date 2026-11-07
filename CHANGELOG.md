@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Logging in a container that is not logged in.** The README told you to
+  `podman exec` into the service, which only works when the service is up --
+  and a container with no Claude login exits in under a second, so the one
+  state that needs the instruction is the one it cannot be used in. It now
+  documents the one-off container on the same state volume, the user mapping
+  and env file that have to match the unit's, and the read-write fifo that
+  gives `claude auth login` a pty and a stdin that does not EOF on a host
+  with no terminal multiplexer. Found running it on Josui Prime.
+
+- **A fourth way for a session not to appear.** "When no session appears" now
+  covers credentials whose `accessToken` and `refreshToken` are empty strings
+  after a failed refresh, which leaves a `.credentials.json` that exists, has
+  scopes and a subscription tier, and authenticates nothing.
+
 ## [0.10.0] - 2026-11-06
 
 ### Added

@@ -130,11 +130,57 @@ and [Matrix](https://github.com/crunchtools/claude-agent/blob/main/docs/matrix.m
 ## Run it
 
 `deploy/josui.service.example` and `deploy/josui.env.example` show a server
-deployment; the real unit and env file live in the host's private config repo. First start needs one thing done by hand, once, because the login
-is personal and Remote Control refuses long-lived tokens:
+deployment; the real unit and env file live in the host's private config repo.
+First start needs one thing done by hand, once, because the login is personal
+and Remote Control refuses long-lived tokens.
+
+A container that is already running takes it directly:
 
 ```bash
 podman exec -it <service> claude auth login    # claude.ai account; prints a URL, takes a code
+```
+
+A container with **no** login never stays up long enough for that, which is the
+case this is needed in. Remote Control exits immediately with "You must be
+logged in to use Remote Control", the supervisor stops the other process, and
+the unit restarts the pair thirty seconds later; measured 2026-11-07, under a
+second from start to exit. Log in from a one-off container on the same state
+volume instead, with the unit stopped:
+
+```bash
+systemctl stop <service>
+podman run --rm -it \
+  --uidmap 0:100000:1000 --uidmap 1000:0:1 --uidmap 1001:101001:64535 \
+  --gidmap 0:100000:1000 --gidmap 1000:0:1 --gidmap 1001:101001:64535 \
+  --network <the unit's network> --dns=none \
+  --env-file <the unit's env file> \
+  -v <the state volume>:/home/josui:Z \
+  --entrypoint claude quay.io/crunchtools/josui:latest auth login
+systemctl start <service>
+```
+
+Both details matter. The user mapping has to be the unit's, or the login is
+written into the state volume owned by a uid the service cannot read. The env
+file is there for `HTTPS_PROXY`: the login talks to Anthropic, and the
+container has no other way out.
+
+Without a terminal on the host, `claude auth login` still needs a pty and a
+stdin that stays open to take the code. A fifo opened read-write gives both,
+where `script` alone does not -- it stops forwarding after its stdin first
+reports EOF:
+
+```bash
+# script -c takes one command, so save the `podman run` above as a file.
+install -m 755 /dev/stdin /tmp/login.sh <<'SH'
+#!/bin/bash
+exec podman run --rm -it <the options above> \
+  --entrypoint claude quay.io/crunchtools/josui:latest auth login
+SH
+
+mkfifo /tmp/login.fifo
+setsid bash -c 'exec 9<>/tmp/login.fifo; script -qfc /tmp/login.sh /tmp/login.log <&9' &
+grep -ao 'https://claude.com/cai/oauth/authorize[^ ]*' /tmp/login.log   # open this, approve
+printf '%s\n' '<the code>' > /tmp/login.fifo
 ```
 
 Then restart the service. A new working directory also needs its trust
@@ -192,6 +238,16 @@ and two of the three failures found so far were invisible from outside:
 - A **workdir that is a git checkout**, which makes Remote Control register a
   `git_repo_url` and Anthropic refuse every session with an HTTP 400 unless the
   Claude GitHub App can see that repository.
+- **Credentials with empty tokens.** On 2026-11-07 the unit crash-looped with
+  "You must be logged in to use Remote Control" while `.credentials.json` was
+  still there and still looked plausible: `claudeAiOauth` kept its scopes,
+  `subscriptionType` and `rateLimitTier`, but `accessToken` and `refreshToken`
+  were empty strings and `expiresAt` was 0. A refresh had failed and left the
+  record standing with nothing in it. `.claude.json` still held the full
+  `oauthAccount`, so the debug file read `oauthAccount.organizationUuid=set`
+  beside `hasOAuthAccessToken=false`. Nothing short of a fresh [login](#run-it)
+  fixes this; check the token lengths, not whether the file exists.
+
 - A **stale MCP client**, after the gateway restarts: the gateway logs "client
   predates a gateway restart" and the agent keeps running without its tools.
   Restart the container.
