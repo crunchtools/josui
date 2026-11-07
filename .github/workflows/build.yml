@@ -41,6 +41,7 @@ jobs:
     outputs:
       tag: ${{ steps.version.outputs.tag }}
       sha_short: ${{ steps.version.outputs.sha_short }}
+      floating: ${{ steps.version.outputs.floating }}
 
     steps:
       - name: Checkout
@@ -52,6 +53,21 @@ jobs:
           TAG=$(git describe --tags --always 2>/dev/null || echo "v0.1.0")
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          # The ONE floating tag this run moves. `latest` is the newest stable
+          # RELEASE (constitution 1.33.0) -- a branch push moves the branch tag
+          # and a pull request gets its own, so neither can touch `latest`.
+          # Before this, every push to the default branch moved `latest`, and on
+          # 2026-11-07 that put unreleased trentina 6.11.0 into production at
+          # 02:01 through podman-auto-update (RT#1559).
+          case "$GITHUB_REF" in
+            refs/tags/v*-*) floating=$TAG ;;
+            refs/tags/v*)   floating=latest ;;
+            refs/pull/*)    n=${GITHUB_REF#refs/pull/}; floating=pr-${n%/merge} ;;
+            # A slash is not legal in an OCI tag, and workflow_dispatch can
+            # run from any branch.
+            *)              floating=${GITHUB_REF_NAME//\//-} ;;
+          esac
+          echo "floating=$floating" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -119,7 +135,7 @@ jobs:
           file: ./Containerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            ${{ env.QUAY_IMAGE }}:latest
+            ${{ env.QUAY_IMAGE }}:${{ steps.version.outputs.floating }}
             ${{ env.QUAY_IMAGE }}:${{ steps.version.outputs.tag }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
@@ -159,7 +175,7 @@ jobs:
           file: ./Containerfile
           push: true
           tags: |
-            ${{ env.GHCR_IMAGE }}:latest
+            ${{ env.GHCR_IMAGE }}:${{ needs.build-and-push-quay.outputs.floating }}
             ${{ env.GHCR_IMAGE }}:${{ needs.build-and-push-quay.outputs.tag }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
