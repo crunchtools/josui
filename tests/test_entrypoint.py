@@ -10,6 +10,7 @@ import stat
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -232,6 +233,29 @@ class EntrypointTest(unittest.TestCase):
         result = self.run_entrypoint(env=self.ready_env(str(missing), timeout="1"))
         self.assertIn("gave up", result.stderr)
         self.assertNotIn("serving:", result.stderr)
+
+    def test_a_dead_supervised_process_stops_the_wait_at_once(self) -> None:
+        """Promptness is the claim, so the timeout is set far above the budget.
+
+        Without the liveness check the loop sits out the whole readiness
+        timeout waiting for a socket that cannot appear, turning a fast clear
+        failure into a slow silent one. A generous timeout here would be
+        satisfied by the slow path too, so this asserts the elapsed time.
+        """
+        # session_env's stand-in agent exits 7 immediately; the socket never
+        # appears. A 60s readiness timeout is far longer than this may take.
+        env = {
+            **self.session_env(),
+            "JOSUI_AGENT_SOCKET": str(self.root / "never.sock"),
+            "JOSUI_READY_TIMEOUT": "60",
+        }
+        started = time.monotonic()
+        result = self.run_entrypoint(env=env)
+        elapsed = time.monotonic() - started
+        self.assertEqual(result.returncode, 7, result.stderr)
+        self.assertIn("gave up", result.stderr)
+        self.assertNotIn("serving:", result.stderr)
+        self.assertLess(elapsed, 20.0, f"took {elapsed:.1f}s; the dead process should end the wait at once")
 
     def test_remote_control_only_does_not_claim_to_be_serving(self) -> None:
         result = self.run_entrypoint()
