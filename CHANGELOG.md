@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-07
+
 ### Added
 - **A readiness line, so a watcher can tell "started" from "serving".** The
   seat exposes no port, and Nagios watches it with a single check that says the
