@@ -272,6 +272,57 @@ if [ -n "${JOSUI_TMUX:-}" ]; then
   start_tmux_session
 fi
 trap 'kill "${pids[@]}" 2>/dev/null' TERM INT
+
+# A READINESS LINE, AND DELIBERATELY NOT A BANNER.
+#
+# Everything above this point says what was *started*. That is not the same
+# claim, and the difference matters to anything watching: the deploy robot
+# (crunchtools/deployer) verifies a seat by waiting for a line in this log,
+# because a seat exposes no port and Nagios can only say "the container is
+# running". A line printed at launch would tell it the seat was ready while
+# the agent was still coming up -- which is the mistake the robot's own
+# readiness window exists to avoid, reintroduced from this side.
+#
+# So this waits for the control socket claude-agent actually serves on, and
+# prints only once it exists. If it never appears the line is never printed,
+# the robot's readiness window expires, and the deploy rolls back -- which is
+# the correct outcome for a seat that did not come up.
+#
+# With no homeserver configured there is no agent and no socket, so the seat is
+# Remote Control only. There is nothing local to probe for that, and saying
+# "serving" on the strength of a process having been forked would be the banner
+# problem again, so it says what it actually knows instead.
+if [ -n "$session" ]; then
+  # Overridable so the readiness path can be exercised without a real agent.
+  # The default is where claude-agent actually puts it, read off the live
+  # container rather than guessed.
+  agent_socket=${JOSUI_AGENT_SOCKET:-/tmp/claude-agent-$(id -u)/control.sock}
+  # The loop also stops when a supervised process has already died. Without
+  # that it would sit out the whole timeout waiting for a socket that cannot
+  # appear, delaying the supervisor from reaping a child that is already gone
+  # -- turning a fast, clear failure into a slow, silent one.
+  waited=0
+  while [ "$waited" -lt "${JOSUI_READY_TIMEOUT:-120}" ]; do
+    [ -S "$agent_socket" ] && break
+    for pid in "${pids[@]}"; do
+      kill -0 "$pid" 2>/dev/null || break 2
+    done
+    sleep 1
+    waited=$((waited + 1))
+  done
+  # The two messages share no substring on purpose. "NOT serving" would
+  # contain "serving", so a watcher told to wait for the success line would be
+  # satisfied by the failure one -- a readiness check that cannot fail, which
+  # is worse than none because it gets trusted.
+  if [ -S "$agent_socket" ]; then
+    log "serving: taking commands on $agent_socket after ${waited}s"
+  else
+    log "gave up: $agent_socket never appeared in ${waited}s"
+  fi
+else
+  log "started: remote control only, no agent session configured"
+fi
+
 status=0
 wait -n "${pids[@]}" || status=$?
 log "a supervised process ended (status $status), stopping"
