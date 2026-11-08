@@ -6,6 +6,30 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **A readiness line, so a watcher can tell "started" from "serving".** The
+  seat exposes no port, and Nagios watches it with a single check that says the
+  container is running. That is all the health signal anything had. The
+  entrypoint now waits for the control socket `claude-agent` actually serves on
+  and logs `serving: taking commands on <socket> after Ns` once it exists --
+  and `gave up: <socket> never appeared in Ns` when it does not.
+
+  The two messages deliberately share no substring. "NOT serving" would contain
+  "serving", so a watcher told to wait for the success line would be satisfied
+  by the failure one: a readiness check that cannot fail, which is worse than
+  none because it gets trusted.
+
+  Every line before this one reports what was *started*, which is a different
+  claim. The deploy robot (crunchtools/deployer#17) verifies a seat by waiting
+  for this line, so a line printed at launch would report the seat ready while
+  the agent was still coming up.
+
+  The wait also stops early if a supervised process has already died, so a
+  failure stays fast and clear instead of sitting out the whole timeout waiting
+  for a socket that cannot appear. `JOSUI_READY_TIMEOUT` (default 120) and
+  `JOSUI_AGENT_SOCKET` are overridable; the socket default was read off the
+  live container rather than guessed.
+
 ### Changed
 - **The ssh fallback is root, not a forced command** (RT #1568). The key into
   gloval authenticated as `josui-rescue`, a forced-command principal with five

@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import socket as socketmod
 import stat
 import subprocess
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -163,6 +165,78 @@ class EntrypointTest(unittest.TestCase):
             "JOSUI_MATRIX_ALLOW": "@alice:example.org",
             "JOSUI_PERMISSION_MODE": "bypassPermissions",
         }
+
+    def ready_env(self, socket_path: str, timeout: str = "3") -> dict[str, str]:
+        """A session env whose agent stays alive, so readiness can be observed.
+
+        `session_env`'s stand-in agent exits at once, which is right for the
+        supervisor tests and wrong here: a dead child short-circuits the
+        readiness wait by design.
+        """
+        # session_env() rewrites both stand-ins, so it has to run FIRST or it
+        # clobbers the long-lived ones below with its exit-7 agent.
+        env = self.session_env()
+        agent = self.root / "bin/claude-agent"
+        agent.write_text("#!/bin/bash\nexec sleep 5\n")
+        agent.chmod(0o755)
+        claude = self.root / "bin/claude"
+        claude.write_text("#!/bin/bash\nexec sleep 5\n")
+        claude.chmod(0o755)
+        return {**env, "JOSUI_AGENT_SOCKET": socket_path, "JOSUI_READY_TIMEOUT": timeout}
+
+    def test_readiness_waits_for_the_socket_then_says_it_is_serving(self) -> None:
+        """The line a watcher waits for is printed only once the socket exists.
+
+        A seat exposes no port, so this log line is the whole health signal the
+        deploy robot has. Printed at launch it would be a banner, and would
+        report ready while the agent was still coming up.
+        """
+        sock = self.root / "control.sock"
+        server = socketmod.socket(socketmod.AF_UNIX, socketmod.SOCK_STREAM)
+        self.addCleanup(server.close)
+        server.bind(str(sock))
+        result = self.run_entrypoint(env=self.ready_env(str(sock)))
+        self.assertIn("serving: taking commands on", result.stderr)
+        self.assertNotIn("gave up", result.stderr)
+
+    def test_readiness_actually_waits_for_a_late_socket(self) -> None:
+        """The wait is the point, not the final check.
+
+        A seat is not instant. If readiness only looked once and moved on, a
+        socket that appears two seconds later would be reported as a seat that
+        never came up, and the deploy robot would roll back a healthy deploy --
+        bug 5 of crunchtools/deployer#17, reintroduced from this side.
+        """
+        sock = self.root / "late.sock"
+        server = socketmod.socket(socketmod.AF_UNIX, socketmod.SOCK_STREAM)
+        self.addCleanup(server.close)
+
+        def bind_late() -> None:
+            server.bind(str(sock))
+
+        timer = threading.Timer(1.5, bind_late)
+        timer.start()
+        self.addCleanup(timer.cancel)
+        result = self.run_entrypoint(env=self.ready_env(str(sock), timeout="10"))
+        self.assertIn("serving: taking commands on", result.stderr)
+        self.assertNotIn("gave up", result.stderr)
+
+    def test_readiness_gives_up_without_claiming_to_serve(self) -> None:
+        """And the failure line shares no substring with the success line.
+
+        "NOT serving" would contain "serving", so a watcher told to wait for
+        the success line would be satisfied by the failure one -- a readiness
+        check that cannot fail.
+        """
+        missing = self.root / "never-appears.sock"
+        result = self.run_entrypoint(env=self.ready_env(str(missing), timeout="1"))
+        self.assertIn("gave up", result.stderr)
+        self.assertNotIn("serving:", result.stderr)
+
+    def test_remote_control_only_does_not_claim_to_be_serving(self) -> None:
+        result = self.run_entrypoint()
+        self.assertIn("remote control only", result.stderr)
+        self.assertNotIn("serving:", result.stderr)
 
     def agent_env(self) -> dict[str, str]:
         lines = (self.home / "agent-env").read_text().splitlines()
