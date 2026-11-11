@@ -3,7 +3,7 @@
 > **Version:** 2.0.0
 > **Ratified:** 2026-10-11
 > **Status:** Active
-> **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.31.0
+> **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.39.1
 > **Profile:** Autonomous Agent
 
 Claude Code packaged as a container, run as Josui: the agent its operator
@@ -52,7 +52,7 @@ whatever was there.
 
 ## Layer 3 — Container & Supply Chain Security
 
-- **Image:** `quay.io/crunchtools/josui` and `ghcr.io/crunchtools/josui`,
+- **Image:** `quay.io/crunchtools/josui` (Quay.io is the only registry),
   public. It holds tooling only; identity and credentials are mounted.
 - **Base:** UBI 10 Minimal, pinned by digest. Claude Code
   (`CLAUDE_CODE_VERSION`) comes from Anthropic's signed repository, pinned in

@@ -1,0 +1,29 @@
+name: Container
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  repository_dispatch:
+    types: [parent-image-updated]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  container:
+    uses: crunchtools/constitution/.github/workflows/container-release.yml@v1.39.1
+    permissions:
+      contents: read
+      pull-requests: read
+    with:
+      image: quay.io/crunchtools/josui
+      # The image is not a server and not systemd: it is gated by running its
+      # real entrypoint read-only with no capabilities and checking the
+      # binaries and gateway state production needs.
+      boot: command
+      boot-command: bash tests/image/boot-gate.sh
+    secrets:
+      QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+      QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}

@@ -9,7 +9,7 @@
 # hooks, the crunchtools policy) comes from crunchtools/claude-agent's
 # packages; this image adds Josui's own wiring in josui-entrypoint.
 #
-# Build happens in GitHub Actions (.github/workflows/build.yml).
+# Build happens in GitHub Actions (.github/workflows/container.yml, the constitution container-release workflow).
 
 FROM registry.access.redhat.com/ubi10/ubi-minimal@sha256:bcecd3e74c9d03eb1a596c6c8f366775a289d422ac5925ec1539924d762ebf23
 
