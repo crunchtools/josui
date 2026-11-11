@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-11-11
+
 ### Changed
 - Image builds go through the constitution's container-release workflow (v1.39.1): build once per change, gate the pushed digest with `tests/image/boot-gate.sh`, promote by digest. GHCR is dropped; Quay.io is the only registry (RT#1550).
 
