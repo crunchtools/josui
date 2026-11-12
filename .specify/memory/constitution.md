@@ -1,6 +1,6 @@
 # josui Constitution
 
-> **Version:** 2.0.0
+> **Version:** 2.1.0
 > **Ratified:** 2026-10-11
 > **Status:** Active
 > **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.39.1
@@ -62,7 +62,7 @@ whatever was there.
   (`DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING`); the broader
   `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is not set, because it also
   turns off the feature-flag fetch Remote Control refuses to start without.
-- **Trivy:** blocking on CRITICAL and HIGH with `.trivyignore`; SBOM (SPDX)
+- **Vulnerability scanning:** none at build time; published images are scanned on a schedule by the fleet CVE check (grype + Nagios), which pages on a new fixable Critical (constitution 1.40.0, RT #1551). SBOM (SPDX)
   per build. cosign signing is not wired yet.
 - **Liveness:** there is none to monitor from inside. Remote Control polls
   rather than holding a connection, and its debug file is quiet while idle, so
@@ -254,3 +254,4 @@ the host's monitoring configuration.
 | 1.5.0 | 2026-11-06 | The development image moved to crunchtools/developer, with its own constitution; what is left here is a pointer. RT#1556 |
 | 1.6.0 | 2026-11-06 | An ssh key to gloval as `josui-rescue`, forced command, over the agent's own internal bridge: the gateway's protected-unit list refuses `unit_restart` on the gateway, and a gateway that is down leaves the agent with no tools to fix it with. Sized to that emergency, not to the operator role; unjudged and unaudited by Trentina, so no pty, no shell, no writing verb. RT#1556 |
 | 2.0.0 | 2026-11-07 | Root on gloval over ssh, replacing the `josui-rescue` forced command. MAJOR because it retires 1.6.0's principle that unmediated authority is sized to the emergency: RT#1568's mediated write path does not work (upstream's gatekeeper cannot reach any provider from inside its own process), so the unmediated path is sized to the agent instead. Pinned to `from=10.89.13.10`; no forced command means no per-command record. Operator's decision. RT#1568 |
+| 2.1.0 | 2026-11-11 | The blocking Trivy gate and `.trivyignore` are retired with the fleet's per-build scan (constitution 1.40.0): published images are scanned on a schedule by the fleet CVE check (RT #1551) |
