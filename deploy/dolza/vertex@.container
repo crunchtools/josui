@@ -5,8 +5,7 @@
 # It uses Prime's gateway env (the josui profile, same access the host
 # sessions it replaces had) with its own name and mode on top: --env wins
 # over --env-file.
-Requires=srv-secrets@josui.service
-After=srv-secrets@josui.service josui.service
+After=josui.service
 Description=Vertex worker %i (agents pod)
 
 [Container]
@@ -21,7 +20,12 @@ AddCapability=setuid setgid sys_chroot chown setfcap
 SecurityLabelDisable=true
 Unmask=/proc/*
 AddDevice=/dev/fuse
-EnvironmentFile=%t/srv-secrets/josui/josui.env
+# No env file: Prime's carries Prime's operator gateway token, which a
+# worker must never hold. A worker runs without the gateway until its own
+# token (Trentina profile `developer`) is delivered by srv-secrets@vertex.
+Environment=JOSUI_MAX_TOOL_CALLS=500
+Environment=JOSUI_MAX_REPEAT=5
+Environment=JOSUI_ANSWER_PERMISSIONS=1
 Environment=JOSUI_MODE=worker
 Environment="JOSUI_NAME=Vertex %i"
 Environment=JOSUI_WORKDIR=/home/podman/work

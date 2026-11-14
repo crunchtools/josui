@@ -25,6 +25,7 @@ EnvironmentFile=%t/srv-secrets/josui/josui.env
 Environment=JOSUI_MODE=worker
 Environment=JOSUI_RC=1
 Environment="JOSUI_NAME=Josui Prime"
+Environment=JOSUI_WORKDIR=/home/podman/work
 Environment=XDG_RUNTIME_DIR=/run/agents
 Volume=%h/srv/josui/config/identity:/etc/josui:ro,Z
 Volume=%h/srv/josui/data/state:/home/podman:Z
