@@ -9,12 +9,12 @@
 #
 #   PTT_SOURCE      PipeWire node to record from (default: the default source)
 #   PTT_WHISPER_URL whisper.cpp server (default http://127.0.0.1:8178)
-#   PTT_TARGET      container and tmux target (default josui:prime)
+#   PTT_TARGET      container and tmux target (default josui:dev)
 set -euo pipefail
 
 runtime=${XDG_RUNTIME_DIR:-/tmp}/ptt
 url=${PTT_WHISPER_URL:-http://127.0.0.1:8178}
-target=${PTT_TARGET:-josui:prime}
+target=${PTT_TARGET:-josui:dev}
 container=${target%%:*}
 session=${target#*:}
 pidfile=$runtime/record.pid
@@ -28,6 +28,12 @@ chmod 0700 "$runtime"
 # First press: start recording, 16 kHz mono, which is what whisper wants.
 if ! [ -s "$pidfile" ] || ! kill -0 "$(cat "$pidfile")" 2>/dev/null; then
   rm -f "$wav"
+  # Talking over Josui silences it: `speak` keeps its player's process group
+  # (negative pid) here.
+  if [ -s "$runtime/speak.pid" ]; then
+    kill -TERM -- "$(cat "$runtime/speak.pid")" 2>/dev/null || true
+    rm -f "$runtime/speak.pid"
+  fi
   args=(--rate 16000 --channels 1 --format s16)
   [ -n "${PTT_SOURCE:-}" ] && args+=(--target "$PTT_SOURCE")
   pw-record "${args[@]}" "$wav" &
@@ -64,6 +70,9 @@ fi
 
 # -l sends the text literally, so a word like "Enter" or "C-c" is typed, not
 # pressed. Enter is sent on its own afterwards.
+# The marker tells `speak` that this prompt was spoken, so its answer is read
+# back. Prompts typed or sent from the phone leave none and stay silent.
+printf '%s' "$text" > "$runtime/voice-turn"
 podman exec "$container" tmux send-keys -t "$session" -l "$text"
 podman exec "$container" tmux send-keys -t "$session" Enter
 notify "$text" 4000
