@@ -99,18 +99,24 @@ def stop_playing() -> None:
 def say(text: str) -> None:
     stop_playing()
     rate = json.loads(VOICE.with_name(VOICE.name + ".json").read_text())["audio"]["sample_rate"]
-    # One process group, so `ptt` (or the next answer) can silence both halves.
-    pipeline = (
-        f"piper -m {VOICE!s} --output-raw 2>/dev/null"
-        f" | pw-play --rate {rate} --channels 1 --format s16 -"
+    # Two processes joined by a pipe, never a shell string: the voice path is
+    # configurable. Both share one new process group, so `ptt` (or the next
+    # answer) can silence them together.
+    piper = subprocess.Popen(
+        ["piper", "-m", str(VOICE), "--output-raw"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        process_group=0, text=False,
     )
-    proc = subprocess.Popen(
-        ["bash", "-c", pipeline], stdin=subprocess.PIPE, start_new_session=True, text=True
+    player = subprocess.Popen(
+        ["pw-play", "--raw", "--rate", str(rate), "--channels", "1", "--format", "s16", "-"],
+        stdin=piper.stdout, process_group=piper.pid,
     )
-    PLAYING.write_text(str(-proc.pid))  # negative: the whole group
-    assert proc.stdin is not None
-    proc.stdin.write(text + "\n")
-    proc.stdin.close()
+    assert piper.stdout is not None and piper.stdin is not None
+    piper.stdout.close()  # the player holds the read end now
+    PLAYING.write_text(str(-piper.pid))  # negative: the whole group
+    piper.stdin.write((text + "\n").encode())
+    piper.stdin.close()
+    del player
 
 
 def newest_transcript() -> Path | None:
@@ -121,14 +127,22 @@ def newest_transcript() -> Path | None:
 
 def main() -> None:
     RUNTIME.mkdir(parents=True, exist_ok=True)
+    # Players are never waited on; let the kernel reap them.
+    signal.signal(signal.SIGCHLD, signal.SIG_IGN)
     log(f"watching {TRANSCRIPTS}, voice {VOICE.name}")
     current: Path | None = None
     offset = 0
     armed = False  # the spoken prompt has arrived; speak the next final answer
     buffer = ""
+    latest: Path | None = None
+    tick = 0
     while True:
         time.sleep(0.4)
-        latest = newest_transcript()
+        # Looking for a newer session file walks the directory, so it happens
+        # every few seconds; following the current one happens every tick.
+        if tick % 10 == 0 or latest is None:
+            latest = newest_transcript()
+        tick += 1
         if latest is None:
             continue
         if latest != current:
@@ -150,7 +164,8 @@ def main() -> None:
         for line in lines:
             try:
                 entry = json.loads(line)
-            except ValueError:
+            except ValueError as error:
+                log(f"skipping an unreadable line in {current.name} near byte {offset}: {error}")
                 continue
             prompt = prompt_text(entry)
             # Reminders and notices Claude Code injects are not a person's
