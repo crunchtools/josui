@@ -88,12 +88,13 @@ edit_state_json() {
   [ -s "$state" ] || echo '{}' > "$state"
   tmp=$(mktemp "$HOME/.claude.json.XXXXXX")
   chmod 0600 "$tmp"
-  if ! JOSUI_STATE_EDIT=$1 python3 -c '
+  if ! JOSUI_STATE_EDIT=$1 JOSUI_TRUST_DIR=$workdir python3 -c '
 import json, os, sys
 
 with open(sys.argv[1]) as handle:
     state = json.load(handle)
-if os.environ["JOSUI_STATE_EDIT"] == "gateway":
+edit = os.environ["JOSUI_STATE_EDIT"]
+if edit == "gateway":
     state["mcpServers"] = {
         "trentina": {
             "type": "http",
@@ -103,6 +104,13 @@ if os.environ["JOSUI_STATE_EDIT"] == "gateway":
     }
 else:
     state["hasCompletedOnboarding"] = True
+if edit == "interactive":
+    # The three first-run questions an unattended interactive session cannot
+    # answer: onboarding, the Remote Control dialog, and trust in the one
+    # directory the operator created for it.
+    state["remoteDialogSeen"] = True
+    project = state.setdefault("projects", {}).setdefault(os.environ["JOSUI_TRUST_DIR"], {})
+    project["hasTrustDialogAccepted"] = True
 with open(sys.argv[2], "w") as handle:
     json.dump(state, handle)
 ' "$state" "$tmp"; then
@@ -258,12 +266,41 @@ else
 fi
 server_args+=(--remote-control-session-name-prefix "${JOSUI_NAME:-josui}")
 
-# The Remote Control server and -- when a homeserver is configured --
+# JOSUI_MODE=interactive: one interactive Claude Code, with Remote Control on,
+# inside tmux session `prime` -- the dispatcher Josui Prime. A person reaches
+# the same conversation three ways: the app (Remote Control), a terminal
+# (podman exec -it <service> tmux attach -t prime) and typed-in voice
+# (tmux send-keys from the host). It is not a server: one conversation, no
+# spawning, so the server arguments above go unused. When Claude Code exits
+# the session ends, the watcher below returns, and the unit restarts it.
+start_interactive_session() {
+  local tmux=${JOSUI_TMUX_CMD:-tmux} name=${JOSUI_NAME:-josui}
+  if ! command -v "$tmux" > /dev/null 2>&1; then
+    log "JOSUI_MODE=interactive needs $tmux, which is not in this image"
+    exit 1
+  fi
+  edit_state_json interactive
+  "$tmux" new-session -d -s prime -x 200 -y 50 -c "$workdir" \
+    claude -n "$name" --remote-control "$name" \
+    --permission-mode "${JOSUI_PERMISSION_MODE:-acceptEdits}"
+  log "tmux session 'prime' is up: podman exec -it <service> tmux attach -t prime"
+}
+
+# The Remote Control server (or, in interactive mode, the tmux session that
+# holds the one conversation) and -- when a homeserver is configured --
 # claude-agent, side by side. When either ends the container ends, and the
 # unit restarts both.
 pids=()
-claude "${server_args[@]}" > /dev/null &
-pids+=($!)
+if [ "${JOSUI_MODE:-server}" = interactive ]; then
+  start_interactive_session
+  # Polled rather than waited on: tmux daemonises, so the session has no child
+  # pid here to wait for.
+  while "${JOSUI_TMUX_CMD:-tmux}" has-session -t prime 2>/dev/null; do sleep 5; done &
+  pids+=($!)
+else
+  claude "${server_args[@]}" > /dev/null &
+  pids+=($!)
+fi
 if [ -n "$session" ]; then
   claude-agent run -- --permission-mode "${JOSUI_PERMISSION_MODE:-acceptEdits}" &
   pids+=($!)
@@ -319,6 +356,8 @@ if [ -n "$session" ]; then
   else
     log "gave up: $agent_socket never appeared in ${waited}s"
   fi
+elif [ "${JOSUI_MODE:-server}" = interactive ]; then
+  log "started: interactive session in tmux 'prime', no agent session configured"
 else
   log "started: remote control only, no agent session configured"
 fi

@@ -220,6 +220,7 @@ question answered once: `podman exec -it <service> claude-agent attach --rw`.
 | `JOSUI_MATRIX_ALLOW` | unset | Comma list of the exact Matrix IDs whose messages reach the session. Empty lets nothing through. |
 | `JOSUI_MAX_TOOL_CALLS`, `JOSUI_MAX_REPEAT` | `500`, `5` | Circuit breakers. |
 | `JOSUI_DEBUG_FILE` | audit dir + `/remote-control.log` | Remote Control's `--debug-file`, emptied at each start. Read it first when a session does not appear. |
+| `JOSUI_MODE` | `server` | `interactive` runs one interactive Claude Code with Remote Control on, named `JOSUI_NAME`, in tmux session `prime` instead of the Remote Control server: the dispatcher Josui Prime, reached from the app, `podman exec -it <service> tmux attach -t prime`, or text sent with `tmux send-keys`. Onboarding, the Remote Control dialog and trust in `JOSUI_WORKDIR` are recorded as answered. |
 | `JOSUI_TMUX` | unset | `1` starts a detached tmux session `dev` holding an interactive Claude Code. See [Attaching](#attaching). |
 | `JOSUI_AUDIT_RETENTION_DAYS` | `120` | Age at which an audit file is deleted at start. |
 | `JOSUI_AUDIT_DIR` | set in the image | Where audit files are written; mount a volume there. |

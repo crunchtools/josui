@@ -40,13 +40,33 @@ RUN rpm --import https://downloads.claude.ai/keys/claude-code.asc && \
 # the site's container and fail here.
 RUN microdnf install -y --setopt=install_weak_deps=0 --nodocs \
         findutils grep sed gawk tar gzip which procps-ng \
-        ca-certificates git-core openssh-clients jq python3 \
+        ca-certificates git-core openssh-clients jq python3 podman-remote \
         nodejs nodejs-full-i18n npm \
         "claude-code-${CLAUDE_CODE_VERSION}" \
         "claude-agent-${CLAUDE_AGENT_VERSION}" "claude-agent-matrix-${CLAUDE_AGENT_VERSION}" \
         "claude-agent-trentina-${CLAUDE_AGENT_VERSION}" && \
     microdnf clean all && \
     claude --version && claude-agent --version
+
+# tmux holds the interactive session (JOSUI_MODE=interactive, JOSUI_TMUX) that
+# a person attaches to. It is in RHEL BaseOS but not in the UBI repositories,
+# so this layer registers, installs and unregisters in one RUN (container-image
+# profile II). podman-remote, above, is in UBI: Josui Prime drives the host's
+# podman socket to start and stop the worker containers beside it.
+RUN --mount=type=secret,id=activation_key \
+    --mount=type=secret,id=org_id <<'EOF'
+set -euo pipefail
+if [ -s /run/secrets/activation_key ] && [ -s /run/secrets/org_id ]; then
+    microdnf install -y --setopt=install_weak_deps=0 --nodocs subscription-manager
+    subscription-manager register \
+        --activationkey="$(cat /run/secrets/activation_key)" \
+        --org="$(cat /run/secrets/org_id)"
+    trap 'subscription-manager unregister || true; subscription-manager clean || true' EXIT
+    microdnf install -y --setopt=install_weak_deps=0 --nodocs tmux
+    tmux -V
+fi
+microdnf clean all
+EOF
 
 RUN useradd --uid 1000 --user-group --create-home --home-dir /home/josui --shell /bin/bash josui && \
     mkdir -p /etc/josui /var/lib/josui/josui-skills /var/log/josui && \
