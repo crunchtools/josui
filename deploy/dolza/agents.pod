@@ -11,7 +11,8 @@ After=network-online.target trentina.service
 
 [Pod]
 PodName=agents
-Network=crunchtools
+# Pinned: dolza's gateway picks the josui-matrix profile by this address.
+Network=crunchtools:ip=10.89.0.20
 # Host user -> uid 1000 in every member: the josui and developer images both
 # run as 1000, and the shared directories are owned by the host user.
 UserNS=keep-id:uid=1000,gid=1000
