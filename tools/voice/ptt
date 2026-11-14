@@ -68,11 +68,19 @@ if [ -z "$text" ] || [ "$text" = "[BLANK_AUDIO]" ]; then
   exit 0
 fi
 
-# -l sends the text literally, so a word like "Enter" or "C-c" is typed, not
-# pressed. Enter is sent on its own afterwards.
 # The marker tells `speak` that this prompt was spoken, so its answer is read
 # back. Prompts typed or sent from the phone leave none and stay silent.
 printf '%s' "$text" > "$runtime/voice-turn"
-podman exec "$container" tmux send-keys -t "$session" -l "$text"
-podman exec "$container" tmux send-keys -t "$session" Enter
+# A Prime held by claude-agent (texting on) takes the prompt through its
+# socket, which holds one that arrives mid-turn until the turn ends. Without
+# the supervisor it is typed into tmux. -l sends the text literally, so a word
+# like "Enter" or "C-c" is typed, not pressed; Enter is sent on its own after.
+# `status` exits 0 either way, so read its session line.
+if podman exec "$container" claude-agent status 2>/dev/null | grep -q '^session: *[a-z]' &&
+   ! podman exec "$container" claude-agent status 2>/dev/null | grep -q '^session: *none running'; then
+  podman exec "$container" claude-agent send "$text"
+else
+  podman exec "$container" tmux send-keys -t "$session" -l "$text"
+  podman exec "$container" tmux send-keys -t "$session" Enter
+fi
 notify "$text" 4000

@@ -24,10 +24,17 @@ EnvironmentFile=%t/srv-secrets/josui/josui.env
 # Attach: podman exec -it josui tmux attach -t dev
 Environment=JOSUI_MODE=worker
 Environment=JOSUI_RC=1
+# RCS texts (developer >= 1.8.0): with a homeserver set, the one session runs
+# under claude-agent and its Matrix bridge delivers texts into it. Matrix goes
+# through dolza's gateway (/matrix, profile josui-matrix, chosen by the pod's
+# address) to conduit-josui on gloval, which stays beside bridge-rcs-josui.
+Environment=JOSUI_MATRIX_HOMESERVER=http://trentina:8019/matrix
+Environment=JOSUI_MATRIX_ALLOW=<owner's RCS puppet id, from gloval's josui.env>
 Environment="JOSUI_NAME=Josui Prime"
 Environment=JOSUI_WORKDIR=/home/podman/work
 Environment=XDG_RUNTIME_DIR=/run/agents
 Volume=%h/srv/josui/config/identity:/etc/josui:ro,Z
+Volume=%t/srv-secrets/josui/matrix-token:/etc/josui-matrix/token:ro,Z
 Volume=%h/srv/josui/data/state:/home/podman:Z
 Volume=%h/srv/josui/data/audit:/var/log/josui:Z
 Volume=%h/srv/josui/data/josui-skills:/var/lib/josui/josui-skills:Z
