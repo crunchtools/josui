@@ -1,0 +1,28 @@
+[Unit]
+# Speech-to-text for talking to Josui Prime (2026-11-14 decision). The mic
+# stays on the host: ~/.local/bin/ptt records with pw-record and posts the
+# wav here; only loopback is published.
+Description=whisper.cpp server, Vulkan on the Radeon 890M (voice input for Josui Prime)
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+Image=ghcr.io/ggml-org/whisper.cpp:main-vulkan-5922450fbce1ed9d1648babd0d5ac4520055b436
+ContainerName=whisper
+ReadOnly=true
+Tmpfs=/tmp:rw,nosuid,size=256m
+NoNewPrivileges=true
+DropCapability=all
+AddDevice=/dev/dri/renderD128
+PublishPort=127.0.0.1:8178:8178
+Volume=%h/srv/whisper/models:/models:ro,Z
+Entrypoint=/usr/local/bin/whisper-server
+Exec=--model /models/ggml-large-v3-turbo-q5_0.bin --host 0.0.0.0 --port 8178 --threads 8 --language en --no-timestamps
+PodmanArgs=--memory=3g
+
+[Service]
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

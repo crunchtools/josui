@@ -1,0 +1,27 @@
+[Unit]
+# The agents pod: Josui Prime and the Vertex workers (2026-11-14 decision).
+# Claude Code finds its peers through a registry of <pid>.json files and
+# messages them over unix sockets in $XDG_RUNTIME_DIR/cc-socks. One shared PID
+# namespace keeps those pids unique (separate namespaces all run Claude as
+# pid 1 and overwrite each other's 1.json); the registry and the runtime dir
+# are bind-mounted into every member at the same path.
+Description=Agents pod (Josui Prime + Vertex workers)
+Wants=network-online.target
+After=network-online.target trentina.service
+
+[Pod]
+PodName=agents
+Network=crunchtools
+# Host user -> uid 1000 in every member: the josui and developer images both
+# run as 1000, and the shared directories are owned by the host user.
+UserNS=keep-id:uid=1000,gid=1000
+PodmanArgs=--share=ipc,net,uts,pid
+
+[Service]
+# PIDs start again from 1 when the pod does, so registry entries and sockets
+# from the last run would name live processes. No member runs while the pod
+# is down, so everything in these two directories is stale at this point.
+ExecStartPre=/usr/bin/find %h/srv/agents/sessions %h/srv/agents/run/cc-socks -mindepth 1 -delete
+
+[Install]
+WantedBy=default.target

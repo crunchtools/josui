@@ -1,0 +1,67 @@
+#!/bin/bash
+# ptt -- push-to-talk into Josui Prime. Bound to a desktop shortcut: the first
+# press starts recording from the microphone, the second stops it, sends the
+# audio to the local whisper.cpp server, and types the transcript into Prime's
+# tmux session followed by Enter.
+#
+# The microphone stays on the host. Nothing in the container can listen; it
+# only ever receives the text, the same way it would if Scott had typed it.
+#
+#   PTT_SOURCE      PipeWire node to record from (default: the default source)
+#   PTT_WHISPER_URL whisper.cpp server (default http://127.0.0.1:8178)
+#   PTT_TARGET      container and tmux target (default josui:prime)
+set -euo pipefail
+
+runtime=${XDG_RUNTIME_DIR:-/tmp}/ptt
+url=${PTT_WHISPER_URL:-http://127.0.0.1:8178}
+target=${PTT_TARGET:-josui:prime}
+container=${target%%:*}
+session=${target#*:}
+pidfile=$runtime/record.pid
+wav=$runtime/utterance.wav
+
+notify() { notify-send -a ptt -t "${2:-2500}" "Josui" "$1" 2>/dev/null || true; }
+
+mkdir -p "$runtime"
+chmod 0700 "$runtime"
+
+# First press: start recording, 16 kHz mono, which is what whisper wants.
+if ! [ -s "$pidfile" ] || ! kill -0 "$(cat "$pidfile")" 2>/dev/null; then
+  rm -f "$wav"
+  args=(--rate 16000 --channels 1 --format s16)
+  [ -n "${PTT_SOURCE:-}" ] && args+=(--target "$PTT_SOURCE")
+  pw-record "${args[@]}" "$wav" &
+  echo $! > "$pidfile"
+  notify "Listening… press again to send" 60000
+  exit 0
+fi
+
+# Second press: stop (SIGINT lets pw-record finish the wav header), then
+# transcribe.
+pid=$(cat "$pidfile")
+rm -f "$pidfile"
+kill -INT "$pid" 2>/dev/null || true
+for _ in $(seq 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.05; done
+
+if ! [ -s "$wav" ]; then
+  notify "Nothing was recorded"
+  exit 1
+fi
+if ! text=$(curl -sf --max-time 60 "$url/inference" \
+    -F file=@"$wav" -F response_format=text -F temperature=0.0); then
+  notify "whisper did not answer at $url"
+  exit 1
+fi
+rm -f "$wav"
+# One line, no surrounding space. whisper writes "[BLANK_AUDIO]" for silence.
+text=$(printf '%s' "$text" | tr '\n' ' ' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+if [ -z "$text" ] || [ "$text" = "[BLANK_AUDIO]" ]; then
+  notify "Heard nothing"
+  exit 0
+fi
+
+# -l sends the text literally, so a word like "Enter" or "C-c" is typed, not
+# pressed. Enter is sent on its own afterwards.
+podman exec "$container" tmux send-keys -t "$session" -l "$text"
+podman exec "$container" tmux send-keys -t "$session" Enter
+notify "$text" 4000
