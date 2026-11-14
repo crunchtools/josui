@@ -89,6 +89,15 @@ class WatcherTest(unittest.TestCase):
         self.assertEqual(spoken, [], "found before the rescan tick")
         self.assertEqual(watcher.tick(), ["All green."])
 
+    def test_a_first_session_after_an_empty_start_is_read_from_its_start(self) -> None:
+        watcher = speak.Watcher(self.root, self.marker)
+        self.assertEqual(watcher.tick(), [])
+        self.assertEqual(watcher.tick(), [])
+        self.marker.write_text("good morning")
+        self.session("a", user("good morning"), answer("Morning, Scott."))
+        # With nothing found yet it looks every tick, not every RESCAN.
+        self.assertEqual(watcher.tick(), ["Morning, Scott."])
+
     def test_the_current_file_is_followed_every_tick(self) -> None:
         self.session("a")
         watcher = speak.Watcher(self.root, self.marker)
