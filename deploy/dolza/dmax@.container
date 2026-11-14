@@ -1,0 +1,51 @@
+[Unit]
+# Dolza (Max) worker %i in the agents pod (2026-11-14 decision). Crunchtools
+# work on Scott's Max subscription (logged in once per container: a credential
+# cannot be shared). Reached by Josui Prime as a local peer, by Scott over
+# Remote Control, and with: podman exec -it dmax%i tmux attach -t dev
+# Its gateway token (Trentina profile `developer`) comes from OpenBao
+# (kv dolza/dmax/dmax.env) through the srv-secrets@dmax oneshot.
+Requires=srv-secrets@dmax.service
+After=srv-secrets@dmax.service josui.service
+Description=Dolza (Max) worker %i (agents pod)
+
+[Container]
+Image=quay.io/crunchtools/developer:latest
+ContainerName=dmax%i
+Pod=agents.pod
+ReadOnly=true
+Tmpfs=/tmp:rw,nosuid,size=2g
+# Nested podman, as measured for the developer seats (developer README).
+DropCapability=all
+AddCapability=setuid setgid sys_chroot chown setfcap
+SecurityLabelDisable=true
+Unmask=/proc/*
+AddDevice=/dev/fuse
+EnvironmentFile=%t/srv-secrets/dmax/dmax.env
+Environment=JOSUI_MAX_TOOL_CALLS=500
+Environment=JOSUI_MAX_REPEAT=5
+Environment=JOSUI_ANSWER_PERMISSIONS=1
+Environment=JOSUI_MODE=worker
+Environment=JOSUI_RC=1
+Environment="JOSUI_NAME=Dolza (Max) %i"
+Environment=JOSUI_WORKDIR=/home/podman/work
+Environment=JOSUI_PERMISSION_MODE=bypassPermissions
+Environment=XDG_RUNTIME_DIR=/run/agents
+Volume=%h/srv/agents/developer-identity:/etc/josui:ro
+Volume=%h/srv/josui/data/josui-skills:/var/lib/josui/josui-skills:ro
+Volume=%h/srv/dmax%i/data/state:/home/podman
+Volume=%h/srv/dmax%i/data/containers:/home/podman/.local/share/containers
+Volume=%h/srv/dmax%i/data/audit:/var/log/josui
+Volume=%h/srv/agents/sessions:/home/podman/.claude/sessions
+Tmpfs=/run/agents:rw,nosuid,mode=1777
+Volume=%h/srv/agents/run/cc-socks:/run/agents/cc-socks
+Volume=%h/srv/agents/machine-id:/etc/machine-id:ro
+PodmanArgs=--memory=4g --memory-swap=4g
+
+[Service]
+Restart=always
+RestartSec=30
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target
