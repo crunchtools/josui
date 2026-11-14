@@ -26,6 +26,8 @@ out=$(run bash -c '
   claude --version
   claude-agent --version
   command -v git jq python3 node >/dev/null
+  tmux -V
+  podman-remote --version
   python3 -c "import json,os;s=json.load(open(os.environ[\"HOME\"]+\"/.claude.json\"));assert s[\"mcpServers\"][\"trentina\"][\"url\"].endswith(\"/mcp\")"
   test -z "${TRENTINA_MCP_TOKEN:-}"
   echo boot-gate-ok

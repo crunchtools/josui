@@ -398,6 +398,55 @@ class EntrypointTest(unittest.TestCase):
         self.assertEqual(self.run_entrypoint().returncode, 0)
         self.assertFalse((self.home / "tmux-args").exists())
 
+    # JOSUI_MODE=interactive: Josui Prime, one interactive Claude Code with
+    # Remote Control on, held in tmux session `prime` instead of the server.
+    def test_interactive_mode_runs_one_remote_control_session_in_tmux(self) -> None:
+        self.fake_tmux()
+        env = {**self.env, "JOSUI_MODE": "interactive", "JOSUI_NAME": "Josui Prime",
+               "JOSUI_PERMISSION_MODE": "bypassPermissions"}
+        result = self.run_entrypoint(env=env)
+        # The fake reports no session, so the watcher returns and the
+        # container ends -- which is what a unit restart relies on.
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = (self.home / "tmux-args").read_text().splitlines()
+        self.assertEqual(
+            calls[0],
+            f"new-session -d -s prime -x 200 -y 50 -c {self.home / 'work'} claude -n Josui Prime "
+            "--remote-control Josui Prime --permission-mode bypassPermissions",
+        )
+        self.assertIn("has-session -t prime", calls)
+        # No Remote Control server beside it.
+        self.assertFalse((self.home / "claude-args").exists())
+        self.assertIn("tmux session 'prime' is up", result.stderr)
+        self.assertIn("interactive session in tmux 'prime'", result.stderr)
+        self.assertNotIn("remote control only", result.stderr)
+
+    def test_interactive_mode_answers_the_first_run_questions(self) -> None:
+        self.fake_tmux()
+        state = self.home / ".claude.json"
+        state.write_text(json.dumps({"projects": {"/elsewhere": {"hasTrustDialogAccepted": False}}}))
+        self.run_entrypoint(env={**self.env, "JOSUI_MODE": "interactive"})
+        data = json.loads(state.read_text())
+        self.assertTrue(data["hasCompletedOnboarding"])
+        self.assertTrue(data["remoteDialogSeen"])
+        self.assertTrue(data["projects"][str(self.home / "work")]["hasTrustDialogAccepted"])
+        # Only the workdir is trusted; other entries are kept as they were.
+        self.assertFalse(data["projects"]["/elsewhere"]["hasTrustDialogAccepted"])
+        self.assertIn("trentina", data["mcpServers"])
+
+    def test_server_mode_does_not_answer_the_remote_control_dialog(self) -> None:
+        self.run_entrypoint()
+        data = json.loads((self.home / ".claude.json").read_text())
+        self.assertNotIn("remoteDialogSeen", data)
+        self.assertNotIn("projects", data)
+
+    def test_interactive_mode_without_tmux_fails_loudly(self) -> None:
+        env = {**self.env, "JOSUI_MODE": "interactive", "JOSUI_TMUX_CMD": "tmux-that-is-not-installed"}
+        result = self.run_entrypoint(env=env)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("needs tmux-that-is-not-installed", result.stderr)
+        self.assertFalse((self.home / "claude-args").exists())
+
     def test_tmux_missing_from_the_image_is_reported_not_fatal(self) -> None:
         env = {**self.env, "JOSUI_TMUX": "1", "JOSUI_TMUX_CMD": "tmux-that-is-not-installed"}
         result = self.run_entrypoint(env=env)
