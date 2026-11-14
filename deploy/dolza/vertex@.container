@@ -2,10 +2,11 @@
 # Vertex worker %i in the agents pod (2026-11-14 decision). Red Hat work on
 # the Vertex AI project, reached by Josui Prime as a local peer and by Scott
 # with: podman exec -it vertex%i tmux attach -t dev
-# It uses Prime's gateway env (the josui profile, same access the host
-# sessions it replaces had) with its own name and mode on top: --env wins
-# over --env-file.
-After=josui.service
+# Its gateway token (Trentina profile `developer`) comes from OpenBao
+# (kv dolza/vertex/vertex.env) through the srv-secrets@vertex oneshot.
+# Requires= on the oneshot: no secrets, no start.
+Requires=srv-secrets@vertex.service
+After=srv-secrets@vertex.service josui.service
 Description=Vertex worker %i (agents pod)
 
 [Container]
@@ -20,9 +21,8 @@ AddCapability=setuid setgid sys_chroot chown setfcap
 SecurityLabelDisable=true
 Unmask=/proc/*
 AddDevice=/dev/fuse
-# No env file: Prime's carries Prime's operator gateway token, which a
-# worker must never hold. A worker runs without the gateway until its own
-# token (Trentina profile `developer`) is delivered by srv-secrets@vertex.
+# Its own env file, never Prime's: Prime's carries the operator token.
+EnvironmentFile=%t/srv-secrets/vertex/vertex.env
 Environment=JOSUI_MAX_TOOL_CALLS=500
 Environment=JOSUI_MAX_REPEAT=5
 Environment=JOSUI_ANSWER_PERMISSIONS=1
@@ -36,7 +36,7 @@ Environment=CLOUD_ML_REGION=global
 Environment=ANTHROPIC_VERTEX_PROJECT_ID=<vertex project id>
 Environment=GOOGLE_APPLICATION_CREDENTIALS=/etc/gcloud/adc.json
 Volume=%h/.config/gcloud/application_default_credentials.json:/etc/gcloud/adc.json:ro
-Volume=%h/srv/josui/config/identity:/etc/josui:ro
+Volume=%h/srv/agents/developer-identity:/etc/josui:ro
 Volume=%h/srv/josui/data/josui-skills:/var/lib/josui/josui-skills:ro
 Volume=%h/srv/vertex%i/data/state:/home/podman
 Volume=%h/srv/vertex%i/data/containers:/home/podman/.local/share/containers
@@ -44,7 +44,7 @@ Volume=%h/srv/vertex%i/data/audit:/var/log/josui
 Volume=%h/srv/agents/sessions:/home/podman/.claude/sessions
 Tmpfs=/run/agents:rw,nosuid,mode=1777
 Volume=%h/srv/agents/run/cc-socks:/run/agents/cc-socks
-Volume=/etc/machine-id:/etc/machine-id:ro
+Volume=%h/srv/agents/machine-id:/etc/machine-id:ro
 PodmanArgs=--memory=4g --memory-swap=4g
 
 [Service]
