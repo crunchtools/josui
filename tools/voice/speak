@@ -1,0 +1,216 @@
+#!/usr/bin/python3
+"""speak -- read Josui Prime's answer to a spoken prompt out loud.
+
+The other half of `ptt`. When ptt types a transcript into Prime it also leaves
+the text in $XDG_RUNTIME_DIR/ptt/voice-turn. This watches Prime's transcript
+(the JSONL files in its state volume, read from the host) for that prompt, then
+for the turn's final answer, and speaks that answer with Piper through
+PipeWire. Prompts that arrive any other way, from the phone or the keyboard,
+get no voice, so the house stays quiet unless Scott spoke first.
+
+Like ptt, the audio never enters a container: Prime writes text, and the host
+turns it into sound.
+
+  SPEAK_TRANSCRIPTS  directory holding Prime's transcripts
+                     (default ~/srv/josui/data/state/.claude/projects)
+  SPEAK_VOICE        Piper .onnx voice (default ~/srv/piper/voices/en_US-ryan-high.onnx)
+  SPEAK_MAX_CHARS    longest answer read in full; longer ones are cut at a
+                     sentence and end with "the rest is on screen" (default 900)
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+HOME = Path.home()
+TRANSCRIPTS = Path(os.environ.get("SPEAK_TRANSCRIPTS", HOME / "srv/josui/data/state/.claude/projects"))
+VOICE = Path(os.environ.get("SPEAK_VOICE", HOME / "srv/piper/voices/en_US-ryan-high.onnx"))
+MAX_CHARS = int(os.environ.get("SPEAK_MAX_CHARS", "900"))
+RUNTIME = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / "ptt"
+MARKER = RUNTIME / "voice-turn"
+PLAYING = RUNTIME / "speak.pid"
+
+
+def log(message: str) -> None:
+    print(f"speak: {message}", file=sys.stderr, flush=True)
+
+
+def squash(text: str) -> str:
+    return " ".join(text.split())
+
+
+def speakable(text: str) -> str:
+    """Markdown written for a screen, turned into something worth hearing."""
+    text = re.sub(r"```.*?```", " (code on screen) ", text, flags=re.S)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)  # [label](url) -> label
+    text = re.sub(r"https?://\S+", "a link", text)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    text = re.sub(r"^\s*(#+|[-*]|\d+\.)\s+", "", text, flags=re.M)
+    text = re.sub(r"[*_|>]", "", text)
+    text = squash(text)
+    if len(text) > MAX_CHARS:
+        cut = text[:MAX_CHARS]
+        end = max(cut.rfind(". "), cut.rfind("? "), cut.rfind("! "))
+        text = (cut[: end + 1] if end > 0 else cut) + " The rest is on screen."
+    return text
+
+
+def prompt_text(entry: dict) -> str | None:
+    """The text of a person's prompt, or None for tool results and the rest."""
+    if entry.get("type") != "user":
+        return None
+    content = (entry.get("message") or {}).get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
+        if parts and not any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content):
+            return " ".join(parts)
+    return None
+
+
+def final_answer(entry: dict) -> str | None:
+    """The answer that ends a turn: an assistant message stopped at end_turn."""
+    if entry.get("type") != "assistant":
+        return None
+    message = entry.get("message") or {}
+    if message.get("stop_reason") != "end_turn":
+        return None
+    parts = [b.get("text", "") for b in message.get("content") or [] if isinstance(b, dict) and b.get("type") == "text"]
+    text = "\n".join(p for p in parts if p.strip())
+    return text or None
+
+
+def stop_playing() -> None:
+    try:
+        os.kill(int(PLAYING.read_text()), signal.SIGTERM)
+    except (OSError, ValueError):
+        pass
+    PLAYING.unlink(missing_ok=True)
+
+
+def say(text: str) -> None:
+    stop_playing()
+    rate = json.loads(VOICE.with_name(VOICE.name + ".json").read_text())["audio"]["sample_rate"]
+    # Two processes joined by a pipe, never a shell string: the voice path is
+    # configurable. Both share one new process group, so `ptt` (or the next
+    # answer) can silence them together.
+    piper = subprocess.Popen(
+        ["piper", "-m", str(VOICE), "--output-raw"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        process_group=0, text=False,
+    )
+    player = subprocess.Popen(
+        ["pw-play", "--raw", "--rate", str(rate), "--channels", "1", "--format", "s16", "-"],
+        stdin=piper.stdout, process_group=piper.pid,
+    )
+    assert piper.stdout is not None and piper.stdin is not None
+    piper.stdout.close()  # the player holds the read end now
+    PLAYING.write_text(str(-piper.pid))  # negative: the whole group
+    piper.stdin.write((text + "\n").encode())
+    piper.stdin.close()
+    del player
+
+
+def newest_transcript(root: Path) -> Path | None:
+    # Top-level session files only: subagents write theirs one level down.
+    files = [p for p in root.glob("*/*.jsonl") if p.is_file()]
+    return max(files, key=lambda p: p.stat().st_mtime, default=None)
+
+
+class Watcher:
+    """Follows the newest transcript and returns the answers to speak.
+
+    Looking for a newer session file walks the directory, so it happens every
+    RESCAN ticks; following the current file happens every tick. The file
+    found at the first look is followed from its end, so nothing said before
+    the watcher started is spoken. A file that appears later is a new session
+    and is read from its start, so a spoken prompt that opened it is not
+    missed.
+    """
+
+    RESCAN = 10
+
+    def __init__(self, root: Path, marker: Path) -> None:
+        self.root, self.marker = root, marker
+        self.current: Path | None = None
+        self.latest: Path | None = None
+        self.offset = 0
+        self.buffer = ""
+        self.armed = False  # the spoken prompt arrived; speak the next final answer
+        self.ticks = 0
+        self.started = False
+
+    def tick(self) -> list[str]:
+        if self.ticks % self.RESCAN == 0 or self.latest is None:
+            self.latest = newest_transcript(self.root)
+        self.ticks += 1
+        if self.latest is None:
+            self.started = True
+            return []
+        if self.latest != self.current:
+            self.current, self.buffer, self.armed = self.latest, "", False
+            self.offset = self.latest.stat().st_size if not self.started else 0
+            log(f"following {self.latest.name}")
+        self.started = True
+        size = self.current.stat().st_size
+        if size < self.offset:
+            self.offset = 0
+        if size == self.offset:
+            return []
+        with self.current.open() as handle:
+            handle.seek(self.offset)
+            self.buffer += handle.read()
+            self.offset = handle.tell()
+        *lines, self.buffer = self.buffer.split("\n")
+        answers = []
+        for line in lines:
+            try:
+                entry = json.loads(line)
+            except ValueError as error:
+                log(f"skipping an unreadable line in {self.current.name} near byte {self.offset}: {error}")
+                continue
+            prompt = prompt_text(entry)
+            # Reminders and notices Claude Code injects are not a person's
+            # prompt, and must not disarm a spoken one.
+            if prompt is not None and not entry.get("isMeta"):
+                try:
+                    expected = squash(self.marker.read_text())
+                except OSError:
+                    expected = ""
+                self.armed = bool(expected) and expected in squash(prompt)
+                if self.armed:
+                    self.marker.unlink(missing_ok=True)
+                continue
+            answer = final_answer(entry) if self.armed else None
+            if answer:
+                self.armed = False
+                answers.append(speakable(answer))
+        return answers
+
+
+def main() -> None:
+    RUNTIME.mkdir(parents=True, exist_ok=True)
+    # Players are never waited on; let the kernel reap them.
+    signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+    log(f"watching {TRANSCRIPTS}, voice {VOICE.name}")
+    watcher = Watcher(TRANSCRIPTS, MARKER)
+    while True:
+        time.sleep(0.4)
+        for text in watcher.tick():
+            log(f"speaking {len(text)} characters")
+            say(text)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        stop_playing()

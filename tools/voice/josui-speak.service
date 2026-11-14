@@ -1,0 +1,14 @@
+# Reads Josui Prime's answers to spoken prompts aloud. User unit on the host
+# that runs Prime: ~/.config/systemd/user/josui-speak.service
+[Unit]
+Description=Josui Prime speaks its answers to spoken prompts (Piper)
+After=pipewire.service
+
+[Service]
+ExecStart=%h/.local/bin/josui-speak
+Environment=PATH=%h/.local/bin:/usr/bin
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

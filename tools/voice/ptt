@@ -1,0 +1,78 @@
+#!/bin/bash
+# ptt -- push-to-talk into Josui Prime. Bound to a desktop shortcut: the first
+# press starts recording from the microphone, the second stops it, sends the
+# audio to the local whisper.cpp server, and types the transcript into Prime's
+# tmux session followed by Enter.
+#
+# The microphone stays on the host. Nothing in the container can listen; it
+# only ever receives the text, the same way it would if Scott had typed it.
+#
+#   PTT_SOURCE      PipeWire node to record from (default: the default source)
+#   PTT_WHISPER_URL whisper.cpp server (default http://127.0.0.1:8178)
+#   PTT_TARGET      container and tmux target (default josui:dev)
+set -euo pipefail
+
+runtime=${XDG_RUNTIME_DIR:-/tmp}/ptt
+url=${PTT_WHISPER_URL:-http://127.0.0.1:8178}
+target=${PTT_TARGET:-josui:dev}
+container=${target%%:*}
+session=${target#*:}
+pidfile=$runtime/record.pid
+wav=$runtime/utterance.wav
+
+notify() { notify-send -a ptt -t "${2:-2500}" "Josui" "$1" 2>/dev/null || true; }
+
+mkdir -p "$runtime"
+chmod 0700 "$runtime"
+
+# First press: start recording, 16 kHz mono, which is what whisper wants.
+if ! [ -s "$pidfile" ] || ! kill -0 "$(cat "$pidfile")" 2>/dev/null; then
+  rm -f "$wav"
+  # Talking over Josui silences it: `speak` keeps its player's process group
+  # (negative pid) here.
+  if [ -s "$runtime/speak.pid" ]; then
+    kill -TERM -- "$(cat "$runtime/speak.pid")" 2>/dev/null || true
+    rm -f "$runtime/speak.pid"
+  fi
+  args=(--rate 16000 --channels 1 --format s16)
+  [ -n "${PTT_SOURCE:-}" ] && args+=(--target "$PTT_SOURCE")
+  pw-record "${args[@]}" "$wav" &
+  echo $! > "$pidfile"
+  notify "Listening… press again to send" 60000
+  exit 0
+fi
+
+# Second press: stop (SIGINT lets pw-record finish the wav header), then
+# transcribe.
+pid=$(cat "$pidfile")
+rm -f "$pidfile"
+kill -INT "$pid" 2>/dev/null || true
+for _ in $(seq 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.05; done
+
+if ! [ -s "$wav" ]; then
+  notify "Nothing was recorded"
+  exit 1
+fi
+# -S keeps curl's own message (refused, timed out, HTTP 500) for the
+# notification, which is the only place a desktop shortcut can say anything.
+if ! text=$(curl -sS -f --max-time 60 "$url/inference" \
+    -F file=@"$wav" -F response_format=text -F temperature=0.0 2> "$runtime/curl.err"); then
+  notify "whisper failed at $url: $(tail -c 200 "$runtime/curl.err")" 8000
+  exit 1
+fi
+rm -f "$wav"
+# One line, no surrounding space. whisper writes "[BLANK_AUDIO]" for silence.
+text=$(printf '%s' "$text" | tr '\n' ' ' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+if [ -z "$text" ] || [ "$text" = "[BLANK_AUDIO]" ]; then
+  notify "Heard nothing"
+  exit 0
+fi
+
+# -l sends the text literally, so a word like "Enter" or "C-c" is typed, not
+# pressed. Enter is sent on its own afterwards.
+# The marker tells `speak` that this prompt was spoken, so its answer is read
+# back. Prompts typed or sent from the phone leave none and stay silent.
+printf '%s' "$text" > "$runtime/voice-turn"
+podman exec "$container" tmux send-keys -t "$session" -l "$text"
+podman exec "$container" tmux send-keys -t "$session" Enter
+notify "$text" 4000
