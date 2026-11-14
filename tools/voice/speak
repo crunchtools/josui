@@ -119,10 +119,81 @@ def say(text: str) -> None:
     del player
 
 
-def newest_transcript() -> Path | None:
+def newest_transcript(root: Path) -> Path | None:
     # Top-level session files only: subagents write theirs one level down.
-    files = [p for p in TRANSCRIPTS.glob("*/*.jsonl") if p.is_file()]
+    files = [p for p in root.glob("*/*.jsonl") if p.is_file()]
     return max(files, key=lambda p: p.stat().st_mtime, default=None)
+
+
+class Watcher:
+    """Follows the newest transcript and returns the answers to speak.
+
+    Looking for a newer session file walks the directory, so it happens every
+    RESCAN ticks; following the current file happens every tick. The file
+    found at the first look is followed from its end, so nothing said before
+    the watcher started is spoken. A file that appears later is a new session
+    and is read from its start, so a spoken prompt that opened it is not
+    missed.
+    """
+
+    RESCAN = 10
+
+    def __init__(self, root: Path, marker: Path) -> None:
+        self.root, self.marker = root, marker
+        self.current: Path | None = None
+        self.latest: Path | None = None
+        self.offset = 0
+        self.buffer = ""
+        self.armed = False  # the spoken prompt arrived; speak the next final answer
+        self.ticks = 0
+        self.started = False
+
+    def tick(self) -> list[str]:
+        if self.ticks % self.RESCAN == 0 or self.latest is None:
+            self.latest = newest_transcript(self.root)
+        self.ticks += 1
+        if self.latest is None:
+            self.started = True
+            return []
+        if self.latest != self.current:
+            self.current, self.buffer, self.armed = self.latest, "", False
+            self.offset = self.latest.stat().st_size if not self.started else 0
+            log(f"following {self.latest.name}")
+        self.started = True
+        size = self.current.stat().st_size
+        if size < self.offset:
+            self.offset = 0
+        if size == self.offset:
+            return []
+        with self.current.open() as handle:
+            handle.seek(self.offset)
+            self.buffer += handle.read()
+            self.offset = handle.tell()
+        *lines, self.buffer = self.buffer.split("\n")
+        answers = []
+        for line in lines:
+            try:
+                entry = json.loads(line)
+            except ValueError as error:
+                log(f"skipping an unreadable line in {self.current.name} near byte {self.offset}: {error}")
+                continue
+            prompt = prompt_text(entry)
+            # Reminders and notices Claude Code injects are not a person's
+            # prompt, and must not disarm a spoken one.
+            if prompt is not None and not entry.get("isMeta"):
+                try:
+                    expected = squash(self.marker.read_text())
+                except OSError:
+                    expected = ""
+                self.armed = bool(expected) and expected in squash(prompt)
+                if self.armed:
+                    self.marker.unlink(missing_ok=True)
+                continue
+            answer = final_answer(entry) if self.armed else None
+            if answer:
+                self.armed = False
+                answers.append(speakable(answer))
+        return answers
 
 
 def main() -> None:
@@ -130,61 +201,12 @@ def main() -> None:
     # Players are never waited on; let the kernel reap them.
     signal.signal(signal.SIGCHLD, signal.SIG_IGN)
     log(f"watching {TRANSCRIPTS}, voice {VOICE.name}")
-    current: Path | None = None
-    offset = 0
-    armed = False  # the spoken prompt has arrived; speak the next final answer
-    buffer = ""
-    latest: Path | None = None
-    tick = 0
+    watcher = Watcher(TRANSCRIPTS, MARKER)
     while True:
         time.sleep(0.4)
-        # Looking for a newer session file walks the directory, so it happens
-        # every few seconds; following the current one happens every tick.
-        if tick % 10 == 0 or latest is None:
-            latest = newest_transcript()
-        tick += 1
-        if latest is None:
-            continue
-        if latest != current:
-            current, buffer, armed = latest, "", False
-            # Start at the end: nothing said before this watcher started is
-            # spoken.
-            offset = latest.stat().st_size
-            log(f"following {latest.name}")
-        size = current.stat().st_size
-        if size < offset:
-            offset = 0
-        if size == offset:
-            continue
-        with current.open() as handle:
-            handle.seek(offset)
-            buffer += handle.read()
-            offset = handle.tell()
-        *lines, buffer = buffer.split("\n")
-        for line in lines:
-            try:
-                entry = json.loads(line)
-            except ValueError as error:
-                log(f"skipping an unreadable line in {current.name} near byte {offset}: {error}")
-                continue
-            prompt = prompt_text(entry)
-            # Reminders and notices Claude Code injects are not a person's
-            # prompt, and must not disarm a spoken one.
-            if prompt is not None and not entry.get("isMeta"):
-                try:
-                    expected = squash(MARKER.read_text())
-                except OSError:
-                    expected = ""
-                armed = bool(expected) and expected in squash(prompt)
-                if armed:
-                    MARKER.unlink(missing_ok=True)
-                continue
-            answer = final_answer(entry) if armed else None
-            if answer:
-                armed = False
-                text = speakable(answer)
-                log(f"speaking {len(text)} characters")
-                say(text)
+        for text in watcher.tick():
+            log(f"speaking {len(text)} characters")
+            say(text)
 
 
 if __name__ == "__main__":
