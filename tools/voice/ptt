@@ -75,9 +75,12 @@ printf '%s' "$text" > "$runtime/voice-turn"
 # socket, which holds one that arrives mid-turn until the turn ends. Without
 # the supervisor it is typed into tmux. -l sends the text literally, so a word
 # like "Enter" or "C-c" is typed, not pressed; Enter is sent on its own after.
-# `status` exits 0 either way, so read its session line.
-if podman exec "$container" claude-agent status 2>/dev/null | grep -q '^session: *[a-z]' &&
-   ! podman exec "$container" claude-agent status 2>/dev/null | grep -q '^session: *none running'; then
+# `status` exits 0 either way, so its session line decides: one snapshot,
+# read once. Anything but a live session -- none running, no line, a failed
+# exec -- falls back to tmux.
+status=$(podman exec "$container" claude-agent status 2>/dev/null || true)
+session_line=$(printf '%s\n' "$status" | grep -m1 '^session:' || true)
+if [ -n "$session_line" ] && ! printf '%s' "$session_line" | grep -q 'none running'; then
   podman exec "$container" claude-agent send "$text"
 else
   podman exec "$container" tmux send-keys -t "$session" -l "$text"
