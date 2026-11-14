@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- claude-agent 1.0.1 (was 0.2.1), in step with the developer image: the
+  Matrix bridge names itself, so Cloudflare no longer refuses it (error 1010).
+
 ## [0.11.1] - 2026-11-11
 
 ### Changed

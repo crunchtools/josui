@@ -19,7 +19,7 @@ LABEL description="Josui - Claude Code packaged as a crunchtools autonomous agen
 # A new Claude Code or claude-agent is tested before Josui runs on it: bump
 # by hand.
 ARG CLAUDE_CODE_VERSION=2.1.304
-ARG CLAUDE_AGENT_VERSION=0.2.1
+ARG CLAUDE_AGENT_VERSION=1.0.1
 
 # Anthropic's signed repository for claude-code and crunchtools' for
 # claude-agent, keys imported up front (constitution XIV: repository
