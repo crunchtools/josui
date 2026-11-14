@@ -2,8 +2,8 @@
 # Secrets come from breetai's OpenBao via the runtime dir (RT#1604), not from
 # a plaintext file in ~/srv. Requires= on the ONESHOT is right: no secrets,
 # no start. Never Requires= on openbao itself.
-Requires=srv-secrets@josui.service podman.socket
-After=srv-secrets@josui.service podman.socket
+Requires=srv-secrets@josui.service
+After=srv-secrets@josui.service
 Description=Josui Prime (dolza) - the one dispatcher, voice + Remote Control
 Wants=network-online.target
 After=network-online.target trentina.service
@@ -17,28 +17,22 @@ ReadOnly=true
 Tmpfs=/tmp:rw,nosuid,size=1g
 NoNewPrivileges=true
 DropCapability=all
-# Off for the pod's members: Prime drives the host podman socket and every
-# member shares the registry and socket directories (as the developer seats on
-# gloval already run).
-SecurityLabelDisable=true
 EnvironmentFile=%t/srv-secrets/josui/josui.env
 # JOSUI_MODE=interactive: one Remote Control conversation in tmux `prime`
 # (josui >= 0.12.0). Attach: podman exec -it josui tmux attach -t prime
 Environment=JOSUI_MODE=interactive
 Environment="JOSUI_NAME=Josui Prime"
 Environment=XDG_RUNTIME_DIR=/run/agents
-Environment=CONTAINER_HOST=unix:///run/podman/podman.sock
-Volume=%h/srv/josui/config/identity:/etc/josui:ro
-Volume=%t/srv-secrets/josui/matrix-token:/etc/josui-matrix/token:ro
-Volume=%h/srv/josui/data/state:/home/josui
-Volume=%h/srv/josui/data/audit:/var/log/josui
-Volume=%h/srv/josui/data/josui-skills:/var/lib/josui/josui-skills
+Volume=%h/srv/josui/config/identity:/etc/josui:ro,Z
+Volume=%t/srv-secrets/josui/matrix-token:/etc/josui-matrix/token:ro,Z
+Volume=%h/srv/josui/data/state:/home/josui:Z
+Volume=%h/srv/josui/data/audit:/var/log/josui:Z
+Volume=%h/srv/josui/data/josui-skills:/var/lib/josui/josui-skills:Z
 # Peer discovery, shared by every member of the pod.
-Volume=%h/srv/agents/sessions:/home/josui/.claude/sessions
+Volume=%h/srv/agents/sessions:/home/josui/.claude/sessions:z
 Tmpfs=/run/agents:rw,nosuid,mode=1777
-Volume=%h/srv/agents/run/cc-socks:/run/agents/cc-socks
+Volume=%h/srv/agents/run/cc-socks:/run/agents/cc-socks:z
 Volume=/etc/machine-id:/etc/machine-id:ro
-Volume=%t/podman/podman.sock:/run/podman/podman.sock
 PodmanArgs=--memory=4g --memory-swap=4g
 
 [Service]

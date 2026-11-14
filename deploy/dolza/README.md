@@ -14,8 +14,12 @@ live files are the ones that run; when one changes, update the copy here too.
   - The pod's `ExecStartPre` clears both directories, because pids start again
     from 1 when the pod does.
 - `josui.container`: Josui Prime with `JOSUI_MODE=interactive`. Attach with
-  `podman exec -it josui tmux attach -t prime`. It drives the host podman
-  socket.
+  `podman exec -it josui tmux attach -t prime`. SELinux labels stay on: its
+  own mounts are private (`:Z`), and the two shared directories carry the
+  shared label (`:z`). Measured 2026-11-14: Prime, confined as `container_t`,
+  and the label-disabled Vertex workers connect to each other's sockets in both
+  directions. There is no container socket in it (constitution). Prime directs
+  the workers by message, and systemd keeps them running.
 - `vertex@.container`: Vertex worker N (`vertex@1` … `vertex@4`). Attach with
   `podman exec -it vertexN tmux attach -t dev`. It needs
   `~/srv/vertexN/data/state/.claude` to exist and be owned by the host user

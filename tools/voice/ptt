@@ -47,9 +47,11 @@ if ! [ -s "$wav" ]; then
   notify "Nothing was recorded"
   exit 1
 fi
-if ! text=$(curl -sf --max-time 60 "$url/inference" \
-    -F file=@"$wav" -F response_format=text -F temperature=0.0); then
-  notify "whisper did not answer at $url"
+# -S keeps curl's own message (refused, timed out, HTTP 500) for the
+# notification, which is the only place a desktop shortcut can say anything.
+if ! text=$(curl -sS -f --max-time 60 "$url/inference" \
+    -F file=@"$wav" -F response_format=text -F temperature=0.0 2> "$runtime/curl.err"); then
+  notify "whisper failed at $url: $(tail -c 200 "$runtime/curl.err")" 8000
   exit 1
 fi
 rm -f "$wav"

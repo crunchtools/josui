@@ -21,6 +21,7 @@ PodmanArgs=--share=ipc,net,uts,pid
 # PIDs start again from 1 when the pod does, so registry entries and sockets
 # from the last run would name live processes. No member runs while the pod
 # is down, so everything in these two directories is stale at this point.
+ExecStartPre=/usr/bin/mkdir -p %h/srv/agents/sessions %h/srv/agents/run/cc-socks
 ExecStartPre=/usr/bin/find %h/srv/agents/sessions %h/srv/agents/run/cc-socks -mindepth 1 -delete
 
 [Install]
