@@ -32,7 +32,7 @@ Volume=%h/srv/josui/data/josui-skills:/var/lib/josui/josui-skills:Z
 Volume=%h/srv/agents/sessions:/home/josui/.claude/sessions:z
 Tmpfs=/run/agents:rw,nosuid,mode=1777
 Volume=%h/srv/agents/run/cc-socks:/run/agents/cc-socks:z
-Volume=/etc/machine-id:/etc/machine-id:ro
+Volume=%h/srv/agents/machine-id:/etc/machine-id:ro,z
 PodmanArgs=--memory=4g --memory-swap=4g
 
 [Service]
