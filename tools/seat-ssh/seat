@@ -1,0 +1,20 @@
+#!/bin/bash
+# seat -- attach to a worker's Claude Code session. Installed as one link per
+# seat; the link's name says which:
+#
+#   v1..v4   Dolza (Vertex) 1-4      m1..m4   Dolza (Max) 1-4
+#   x1..x4   Exedore (Max) 1-4       prime    Josui Prime
+#
+# `v2 shell` opens the seat's shell window instead. Ctrl-b d detaches and
+# leaves the session running.
+set -euo pipefail
+name=$(basename "$0")
+window=0
+[ "${1:-}" = shell ] && window=1
+case "$name" in
+  v[1-4])  exec podman exec -it "vertex${name#v}" tmux -u attach -t "dev:$window" ;;
+  m[1-4])  exec podman exec -it "dmax${name#m}" tmux -u attach -t "dev:$window" ;;
+  x[1-4])  exec ssh -t exedore podman exec -it "max${name#x}" tmux -u attach -t "dev:$window" ;;
+  prime)   exec podman exec -it josui tmux -u attach -t "dev:$window" ;;
+  *) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac
