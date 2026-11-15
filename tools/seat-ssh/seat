@@ -16,5 +16,7 @@ case "$name" in
   m[1-4])  exec podman exec -it "dmax${name#m}" tmux -u attach -t "dev:$window" ;;
   x[1-4])  exec ssh -t exedore podman exec -it "max${name#x}" tmux -u attach -t "dev:$window" ;;
   prime)   exec podman exec -it josui tmux -u attach -t "dev:$window" ;;
-  *) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) printf '%s\n' "seat: link this script as v1..v4, m1..m4, x1..x4 or prime" \
+       "  v = Dolza (Vertex), m = Dolza (Max), x = Exedore (Max); add 'shell' for the shell window"
+     exit 2 ;;
 esac

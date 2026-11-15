@@ -71,10 +71,72 @@ class SeatSshTest(unittest.TestCase):
         self.assertIn("down: unreachable", result.stdout)
         self.assertIn("dolza-dmax1", self.local.read_text())
 
+    def test_a_from_address_that_is_not_an_address_is_refused(self) -> None:
+        env_hosts = self.hosts
+        result = subprocess.run(
+            ["bash", str(SCRIPT), "grant"],
+            env={**os.environ, "SEAT_SSH_PUBKEYS": str(self.pubkeys), "SEAT_SSH_HOSTS": env_hosts,
+                 "SEAT_SSH_FROM": '10.44.0.20",command="sh'},
+            capture_output=True, text=True, check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not an IPv4 address", result.stderr)
+        self.assertFalse(self.local.exists())
+
+    def test_a_public_key_that_is_not_base64_is_refused(self) -> None:
+        (self.pubkeys / "dmax1.pub").write_text('ssh-ed25519 AAAA\nevil dolza-dmax1\n')
+        (self.pubkeys / "dmax1.pub").write_text('ssh-ed25519 AA,AA dolza-dmax1\n')
+        result = self.run_tool("grant", "dmax1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not base64", result.stderr)
+
+    def test_an_unreadable_file_is_never_replaced(self) -> None:
+        # A path that is not a readable regular file is refused, untouched.
+        self.remote.unlink()
+        self.remote.mkdir()
+        (self.remote / "kept").write_text("x\n")
+        result = self.run_tool("grant")
+        self.assertIn("remote: unreachable or failed", result.stdout)
+        self.assertTrue(self.remote.is_dir())
+        self.assertEqual(sorted(p.name for p in self.remote.iterdir()), ["kept"])
+
     def test_a_seat_name_is_never_a_pattern(self) -> None:
         result = self.run_tool("revoke", ".*")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("not a seat name", result.stderr)
+
+
+
+SEAT = Path(__file__).resolve().parent.parent / "tools/seat-ssh/seat"
+
+
+class SeatAttachTest(unittest.TestCase):
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.bin = Path(tmp.name)
+        for tool in ("podman", "ssh"):
+            (self.bin / tool).write_text(f'#!/bin/sh\necho {tool} "$@"\n')
+            (self.bin / tool).chmod(0o755)
+
+    def attach(self, link: str, *args: str) -> subprocess.CompletedProcess[str]:
+        (self.bin / link).symlink_to(SEAT)
+        env = {**os.environ, "PATH": f"{self.bin}:{os.environ['PATH']}"}
+        return subprocess.run([str(self.bin / link), *args], env=env, capture_output=True, text=True, check=False)
+
+    def test_each_kind_of_seat_reaches_its_container(self) -> None:
+        self.assertEqual(self.attach("v2").stdout.strip(), "podman exec -it vertex2 tmux -u attach -t dev:0")
+        self.assertEqual(self.attach("m4").stdout.strip(), "podman exec -it dmax4 tmux -u attach -t dev:0")
+        self.assertEqual(self.attach("x1").stdout.strip(), "ssh -t exedore podman exec -it max1 tmux -u attach -t dev:0")
+        self.assertEqual(self.attach("prime").stdout.strip(), "podman exec -it josui tmux -u attach -t dev:0")
+
+    def test_shell_opens_the_shell_window(self) -> None:
+        self.assertTrue(self.attach("v3", "shell").stdout.strip().endswith("-t dev:1"))
+
+    def test_an_unknown_name_prints_usage(self) -> None:
+        result = self.attach("v9")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("link this script", result.stdout)
 
 
 if __name__ == "__main__":

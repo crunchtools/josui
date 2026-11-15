@@ -34,16 +34,31 @@ else
 fi
 
 die() { echo "seat-ssh: $*" >&2; exit 1; }
+usage() {
+  cat <<'USAGE'
+seat-ssh grant [seat ...]    install (or replace) each seat's line
+seat-ssh revoke seat ...     remove each seat's line everywhere
+seat-ssh list                show which seats each host accepts
+USAGE
+}
+# Everything that lands in an authorized_keys line is checked first: an
+# address (or CIDR), a key type, and base64 -- nothing that could carry a
+# quote, comma or newline into the options.
+[[ $from =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}(/[0-9]{1,2})?$ ]] || die "SEAT_SSH_FROM is not an IPv4 address or CIDR: $from"
 valid_seat() { [[ $1 =~ ^[a-z][a-z0-9-]*$ ]] || die "not a seat name: $1"; }
 
 # The edit, run on the target with the file name as $1: drop the tagged lines
 # read from stdin's first line (space-separated seats), then append the rest.
 EDIT='f=$1; mkdir -p "$(dirname "$f")"; chmod 700 "$(dirname "$f")"; touch "$f"; chmod 600 "$f"
+if ! [ -f "$f" ] || ! [ -r "$f" ]; then echo "$f is not a readable file" >&2; exit 1; fi
 read -r seats; tmp=$(mktemp "$f.XXXXXX")
 pattern=$(printf " dolza-%s\$|" $seats); pattern=${pattern%|}
-grep -vE "$pattern" "$f" > "$tmp" || true
+grep -vE "$pattern" "$f" > "$tmp"; rc=$?
+# grep: 1 is "nothing left after the filter", 2 is a read error -- never
+# replace the file with a partial copy.
+if [ $rc -gt 1 ]; then rm -f "$tmp"; echo "cannot read $f" >&2; exit 1; fi
 cat >> "$tmp"
-mv "$tmp" "$f"; chmod 600 "$f"; restorecon "$f" 2>/dev/null || true'
+mv "$tmp" "$f"; chmod 600 "$f"; restorecon "$f" >/dev/null 2>&1 || true'
 
 apply() {   # apply <seats> <lines>
   local seats=$1 lines=$2 entry name how file rc=0 edit64
@@ -71,6 +86,8 @@ case "$cmd" in
       valid_seat "$seat"
       [ -s "$pubkeys/$seat.pub" ] || die "no public key at $pubkeys/$seat.pub"
       read -r type key _ < "$pubkeys/$seat.pub"
+      [[ $type =~ ^(ssh-ed25519|ecdsa-sha2-nistp(256|384|521)|ssh-rsa)$ ]] || die "$seat.pub: unexpected key type"
+      [[ $key =~ ^[A-Za-z0-9+/]+=*$ ]] || die "$seat.pub: key is not base64"
       lines+="from=\"$from\",no-agent-forwarding,no-X11-forwarding $type $key dolza-$seat"$'\n'
     done
     apply "$*" "$lines" ;;
@@ -85,5 +102,5 @@ case "$cmd" in
       else out=$($how "grep -oE ' dolza-[a-z0-9-]+\$' $file" 2>/dev/null) || { echo "$name: unreachable"; continue; }; fi
       echo "$name:$(echo $out | sed 's/dolza-//g')"
     done ;;
-  *) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) usage; exit 2 ;;
 esac
