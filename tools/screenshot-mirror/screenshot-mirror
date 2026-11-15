@@ -39,7 +39,7 @@ sync_once() {
     [ -f "$f" ] && ! [ -L "$f" ] || continue
     name=${f##*/}
     # Size and nanosecond mtime: cp -p carries the mtime to the copy exactly.
-    if [ "$(stat -c '%s %.Y' "$f")" != "$(stat -c '%s %.Y' "$dst/$name" 2>/dev/null)" ]; then
+    if [ "$(stat -c '%s %.9Y' "$f")" != "$(stat -c '%s %.9Y' "$dst/$name" 2>/dev/null)" ]; then
       # -P: if the file was swapped for a symlink after the check above, the
       # link is copied as a link (never its target) and then thrown away.
       if ! { cp -P -p "$f" "$dst/.$name.part" && ! [ -L "$dst/.$name.part" ] \

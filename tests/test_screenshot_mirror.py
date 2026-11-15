@@ -90,11 +90,14 @@ class ScreenshotMirrorTest(unittest.TestCase):
         self.assertIn("missing or empty", result.stderr)
         self.assertEqual([p.name for p in self.dst.iterdir()], ["a.png"])
 
-    def test_same_size_change_is_mirrored(self) -> None:
+    def test_a_change_within_the_same_second_is_mirrored(self) -> None:
+        # Same size, same whole second: only the sub-second mtime differs.
+        second = 1_700_000_000 * 1_000_000_000
         (self.src / "a.png").write_bytes(b"one")
+        os.utime(self.src / "a.png", ns=(second, second + 100))
         self.once()
         (self.src / "a.png").write_bytes(b"two")
-        os.utime(self.src / "a.png", ns=(1, 1_700_000_000_123_456_789))
+        os.utime(self.src / "a.png", ns=(second, second + 900_000_000))
         self.once()
         self.assertEqual((self.dst / "a.png").read_bytes(), b"two")
 
