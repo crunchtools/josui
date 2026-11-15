@@ -11,9 +11,12 @@ set -euo pipefail
 name=$(basename "$0")
 window=0
 [ "${1:-}" = shell ] && window=1
-# tmux's own bar in quiet grey instead of green, and full color passed
-# through to Claude Code; then attach.
+# tmux's own bar in quiet grey instead of green, full color passed through
+# to Claude Code, and the mouse left to the terminal (right-click, select,
+# copy and paste work as anywhere else; scroll back with Ctrl-b [); then
+# attach.
 tmux_cmd=(tmux -u set -g status-style "bg=default,fg=colour244" ";"
+  set -g mouse off ";"
   set -g window-status-current-style "fg=colour250,bold" ";"
   set -g terminal-overrides ",*:Tc" ";" attach -t "dev:$window")
 # The terminal tab is titled with the seat's name, so several are told apart

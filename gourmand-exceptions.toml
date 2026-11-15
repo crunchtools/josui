@@ -21,5 +21,5 @@ classification = "by_design"
 [[exceptions]]
 check = "CH001-absolute_paths"
 path = "deploy/dolza/30-statusline.json"
-justification = "A managed-settings drop-in mounted into the seat containers. Claude Code runs the status line command by the absolute path where the unit mounts the script (/etc/josui/statusline.sh); there is no relative form."
+justification = "A managed-settings drop-in mounted into the seat containers. Claude Code runs the status line command by the absolute path where the unit mounts the script; there is no relative form."
 classification = "by_design"

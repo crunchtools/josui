@@ -173,7 +173,7 @@ class SeatAttachTest(unittest.TestCase):
         return subprocess.run([str(self.bin / link), *args], env=env, capture_output=True, text=True, check=False)
 
     def test_each_kind_of_seat_reaches_its_container(self) -> None:
-        style = "tmux -u set -g status-style bg=default,fg=colour244 ; set -g window-status-current-style fg=colour250,bold ; set -g terminal-overrides ,*:Tc ; attach -t dev:0"
+        style = "tmux -u set -g status-style bg=default,fg=colour244 ; set -g mouse off ; set -g window-status-current-style fg=colour250,bold ; set -g terminal-overrides ,*:Tc ; attach -t dev:0"
         self.assertEqual(self.attach("v2").stdout.strip(), f"podman exec -it vertex2 {style}")
         self.assertEqual(self.attach("m4").stdout.strip(), f"podman exec -it dmax4 {style}")
         self.assertEqual(self.attach("prime").stdout.strip(), f"podman exec -it josui {style}")
