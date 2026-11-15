@@ -1,0 +1,115 @@
+#!/bin/bash
+# seat-ssh -- grant or revoke a Dolza admin seat's ssh key on every host
+# (developer constitution 3.0.0). Run on Dolza, as Scott, with Scott's own ssh
+# access to the hosts.
+#
+#   seat-ssh grant [seat ...]    install (or replace) each seat's line
+#   seat-ssh revoke seat ...     remove each seat's line everywhere
+#   seat-ssh list                show which seats each host accepts
+#
+# A seat's line is tagged with the comment dolza-<seat>, accepted only from
+# Dolza's overlay address, and carries no agent or X11 forwarding. Granting
+# twice changes nothing; granting after a key rotation replaces the line. A
+# host that cannot be reached is reported and skipped; run again when it is up.
+#
+#   SEAT_SSH_PUBKEYS  directory of <seat>.pub (default
+#                     ~/Projects/dolza-services/agents-ssh/pubkeys)
+#   SEAT_SSH_FROM     source address the hosts see (default 10.44.0.20)
+#   SEAT_SSH_HOSTS    newline-separated name|how|file entries replacing the
+#                     four hosts below (how is an ssh command, or "local")
+set -uo pipefail
+
+pubkeys=${SEAT_SSH_PUBKEYS:-$HOME/Projects/dolza-services/agents-ssh/pubkeys}
+from=${SEAT_SSH_FROM:-10.44.0.20}
+# host  how Scott reaches it  whose authorized_keys
+if [ -n "${SEAT_SSH_HOSTS:-}" ]; then
+  mapfile -t hosts <<< "$SEAT_SSH_HOSTS"
+else
+  hosts=(
+    "gloval|ssh -o BatchMode=yes -o ConnectTimeout=8 gloval|/root/.ssh/authorized_keys"
+    "exedore|ssh -o BatchMode=yes -o ConnectTimeout=8 exedore|/root/.ssh/authorized_keys"
+    "breetai|ssh -o BatchMode=yes -o ConnectTimeout=8 breetai|.ssh/authorized_keys"
+    "dolza|local|$HOME/.ssh/authorized_keys"
+  )
+fi
+
+die() { echo "seat-ssh: $*" >&2; exit 1; }
+usage() {
+  cat <<'USAGE'
+seat-ssh grant [seat ...]    install (or replace) each seat's line
+seat-ssh revoke seat ...     remove each seat's line everywhere
+seat-ssh list                show which seats each host accepts
+USAGE
+}
+# Everything that lands in an authorized_keys line is checked first: an
+# address (or CIDR), a key type, and base64 -- nothing that could carry a
+# quote, comma or newline into the options.
+valid_from() {
+  local addr=${1%/*} prefix octet
+  [[ $1 =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}(/[0-9]{1,2})?$ ]] || return 1
+  for octet in ${addr//./ }; do [ "$((10#$octet))" -le 255 ] || return 1; done
+  if [[ $1 == */* ]]; then prefix=${1#*/}; [ "$((10#$prefix))" -le 32 ] || return 1; fi
+}
+valid_from "$from" || die "SEAT_SSH_FROM is not an IPv4 address or CIDR: $from"
+valid_seat() { [[ $1 =~ ^[a-z][a-z0-9-]*$ ]] || die "not a seat name: $1"; }
+
+# The edit, run on the target with the file name as $1: drop the tagged lines
+# read from stdin's first line (space-separated seats), then append the rest.
+EDIT='f=$1; mkdir -p "$(dirname "$f")"; chmod 700 "$(dirname "$f")"; touch "$f"; chmod 600 "$f"
+if ! [ -f "$f" ] || ! [ -r "$f" ]; then echo "$f is not a readable file" >&2; exit 1; fi
+read -r seats; tmp=$(mktemp "$f.XXXXXX")
+pattern=$(printf " dolza-%s\$|" $seats); pattern=${pattern%|}
+grep -vE "$pattern" "$f" > "$tmp"; rc=$?
+# grep: 1 is "nothing left after the filter", 2 is a read error -- never
+# replace the file with a partial copy.
+if [ $rc -gt 1 ]; then rm -f "$tmp"; echo "cannot read $f" >&2; exit 1; fi
+cat >> "$tmp"
+mv "$tmp" "$f"; chmod 600 "$f"; restorecon "$f" >/dev/null 2>&1 || true'
+
+apply() {   # apply <seats> <lines>
+  local seats=$1 lines=$2 entry name how file rc=0 edit64
+  edit64=$(printf '%s' "$EDIT" | base64 -w0)
+  for entry in "${hosts[@]}"; do
+    IFS='|' read -r name how file <<< "$entry"
+    if [ "$how" = local ]; then
+      printf '%s\n%s' "$seats" "$lines" | bash -c "$EDIT" _ "$file" || { echo "$name: FAILED"; rc=1; continue; }
+    else
+      # The edit travels as base64, so no quoting survives two shells.
+      printf '%s\n%s' "$seats" "$lines" | $how "bash -c \"\$(echo $edit64 | base64 -d)\" _ $file" \
+        || { echo "$name: unreachable or failed, skipped (run again when it is up)"; rc=1; continue; }
+    fi
+    echo "$name: done"
+  done
+  return $rc
+}
+
+cmd=${1:-}; shift || true
+case "$cmd" in
+  grant)
+    [ $# -gt 0 ] || set -- $(cd "$pubkeys" && ls *.pub | sed 's/\.pub$//')
+    lines=
+    for seat; do
+      valid_seat "$seat"
+      [ -s "$pubkeys/$seat.pub" ] || die "no public key at $pubkeys/$seat.pub"
+      read -r type key _ < "$pubkeys/$seat.pub"
+      [[ $type =~ ^(ssh-ed25519|ecdsa-sha2-nistp(256|384|521)|ssh-rsa)$ ]] || die "$seat.pub: unexpected key type"
+      [[ $key =~ ^[A-Za-z0-9+/]+=*$ ]] || die "$seat.pub: key is not base64"
+      # The character class is a first pass; ssh-keygen parses the key itself.
+      ssh-keygen -l -f <(printf '%s %s\n' "$type" "$key") > /dev/null 2>&1 \
+        || die "$seat.pub: not a valid $type public key"
+      lines+="from=\"$from\",no-agent-forwarding,no-X11-forwarding $type $key dolza-$seat"$'\n'
+    done
+    apply "$*" "$lines" ;;
+  revoke)
+    [ $# -gt 0 ] || die "revoke needs at least one seat"
+    for seat; do valid_seat "$seat"; done
+    apply "$*" "" ;;
+  list)
+    for entry in "${hosts[@]}"; do
+      IFS='|' read -r name how file <<< "$entry"
+      if [ "$how" = local ]; then out=$(grep -oE ' dolza-[a-z0-9-]+$' "$file" 2>/dev/null)
+      else out=$($how "grep -oE ' dolza-[a-z0-9-]+\$' $file" 2>/dev/null) || { echo "$name: unreachable"; continue; }; fi
+      echo "$name:$(echo $out | sed 's/dolza-//g')"
+    done ;;
+  *) usage; exit 2 ;;
+esac
