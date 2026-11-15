@@ -1,6 +1,6 @@
 # josui Constitution
 
-> **Version:** 2.1.0
+> **Version:** 2.2.0
 > **Ratified:** 2026-10-11
 > **Status:** Active
 > **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.41.0
@@ -237,7 +237,7 @@ the host's monitoring configuration.
 |-----------|-------|
 | Container name | `<service>`, the host's name for this instance |
 | Port | none inbound; outbound ssh to the host's address on the agent's own bridge |
-| Host directory | `/srv/<service>/` (`config/` identity, `config/ssh` the client config and known_hosts, and env, `data/state`, `data/audit`, `data/josui-skills`) |
+| Host directory | `/srv/<service>/` on a server; `~/Projects/<host>-services/<service>/` on a user's machine such as Dolza (crunchtools constitution, unreleased after 1.42.0). Either way: `config/` identity, `config/ssh` the client config and known_hosts, and env, `data/state`, `data/audit`, `data/josui-skills` |
 | Interface | Claude Code Remote Control, and root over ssh on the agent's own bridge |
 
 ## History
@@ -255,3 +255,4 @@ the host's monitoring configuration.
 | 1.6.0 | 2026-11-06 | An ssh key to gloval as `josui-rescue`, forced command, over the agent's own internal bridge: the gateway's protected-unit list refuses `unit_restart` on the gateway, and a gateway that is down leaves the agent with no tools to fix it with. Sized to that emergency, not to the operator role; unjudged and unaudited by Trentina, so no pty, no shell, no writing verb. RT#1556 |
 | 2.0.0 | 2026-11-07 | Root on gloval over ssh, replacing the `josui-rescue` forced command. MAJOR because it retires 1.6.0's principle that unmediated authority is sized to the emergency: RT#1568's mediated write path does not work (upstream's gatekeeper cannot reach any provider from inside its own process), so the unmediated path is sized to the agent instead. Pinned to `from=10.89.13.10`; no forced command means no per-command record. Operator's decision. RT#1568 |
 | 2.1.0 | 2026-11-11 | The blocking Trivy gate and `.trivyignore` are retired with the fleet's per-build scan (constitution 1.40.0): published images are scanned on a schedule by the fleet CVE check (RT #1551) |
+| 2.2.0 | 2026-11-14 | Host directory on a user's machine is `~/Projects/<host>-services/<service>/` (Dolza), backed up with ~/Projects |
