@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import pty
 import subprocess
 import tempfile
 import unittest
@@ -180,6 +181,18 @@ class SeatAttachTest(unittest.TestCase):
         remote = self.attach("x1").stdout.strip()
         quoted = " ".join(f"'{word}'" for word in style.split(" "))
         self.assertEqual(remote, f"ssh -t exedore podman exec -it max1 {quoted}")
+
+    def test_the_tab_is_titled_with_the_seat_name_on_a_terminal(self) -> None:
+        (self.bin / "v2").symlink_to(SEAT)
+        env = {**os.environ, "PATH": f"{self.bin}:{os.environ['PATH']}"}
+        # A pty stands in for the terminal; piped output gets no title.
+        primary, secondary = pty.openpty()
+        subprocess.run([str(self.bin / "v2")], env=env, stdout=secondary, check=False)
+        os.close(secondary)
+        out = os.read(primary, 4096).decode()
+        os.close(primary)
+        self.assertIn("\033]0;Dolza (Vertex) 2\007", out)
+        self.assertNotIn("\033]0;", self.attach("m1").stdout)
 
     def test_shell_opens_the_shell_window(self) -> None:
         self.assertTrue(self.attach("v3", "shell").stdout.strip().endswith("-t dev:1"))

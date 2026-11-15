@@ -16,6 +16,16 @@ window=0
 tmux_cmd=(tmux -u set -g status-style "bg=default,fg=colour244" ";"
   set -g window-status-current-style "fg=colour250,bold" ";"
   set -g terminal-overrides ",*:Tc" ";" attach -t "dev:$window")
+# The terminal tab is titled with the seat's name, so several are told apart
+# at a glance; tmux leaves the title alone (set-titles is off by default).
+case "$name" in
+  v[1-4]) label="Dolza (Vertex) ${name#v}" ;;
+  m[1-4]) label="Dolza (Max) ${name#m}" ;;
+  x[1-4]) label="Exedore (Max) ${name#x}" ;;
+  prime)  label="Josui Prime" ;;
+  *)      label= ;;
+esac
+[ -n "$label" ] && [ -t 1 ] && printf '\033]0;%s\007' "$label"
 case "$name" in
   v[1-4])  exec podman exec -it "vertex${name#v}" "${tmux_cmd[@]}" ;;
   m[1-4])  exec podman exec -it "dmax${name#m}" "${tmux_cmd[@]}" ;;
