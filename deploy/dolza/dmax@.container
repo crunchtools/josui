@@ -31,6 +31,8 @@ Environment=JOSUI_MODE=worker
 Environment=JOSUI_RC=1
 Environment="JOSUI_NAME=Dolza (Max) %i"
 Environment=JOSUI_WORKDIR=/home/podman/work
+# Gloval's git route: clone and push crunchtools repos through the gateway.
+Environment=TRENTINA_GIT_URL=https://trentina.crunchtools.com/proxy/git
 Environment=JOSUI_PERMISSION_MODE=bypassPermissions
 Environment=XDG_RUNTIME_DIR=/run/agents
 Volume=%h/Projects/dolza-services/agents/developer-identity:/etc/josui:ro
