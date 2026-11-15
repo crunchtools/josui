@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 import tempfile
 import unittest
@@ -12,7 +11,6 @@ from pathlib import Path
 SCRIPT = Path(__file__).resolve().parent.parent / "tools/screenshot-mirror/screenshot-mirror"
 
 
-@unittest.skipUnless(shutil.which("rsync"), "rsync is not installed here")
 class ScreenshotMirrorTest(unittest.TestCase):
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()

@@ -27,7 +27,21 @@ sync_once() {
     log "$src is missing or empty; copy left as it is"; return 1
   fi
   mkdir -p "$dst"
-  rsync -a --delete --exclude='.*' "$src/" "$dst/"
+  # Copy what is new or changed, then drop what the source no longer has.
+  # Hidden files (pCloud's in-progress temporaries) are never mirrored.
+  local f name
+  for f in "$src"/*; do
+    [ -f "$f" ] || continue
+    name=${f##*/}
+    if ! cmp -s "$f" "$dst/$name"; then
+      cp -p "$f" "$dst/.$name.part" && mv -f "$dst/.$name.part" "$dst/$name"
+    fi
+  done
+  for f in "$dst"/*; do
+    [ -e "$f" ] || continue
+    name=${f##*/}
+    [ -f "$src/$name" ] || rm -f "$f"
+  done
 }
 
 if [ "${1:-}" = --once ]; then sync_once; exit; fi
