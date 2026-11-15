@@ -15,7 +15,7 @@ mic ─ pw-record ─ ptt ─ HTTP 127.0.0.1:8178 ─ whisper.cpp (Vulkan, 890M)
 - `whisper.container`: the quadlet. It runs the upstream
   `ghcr.io/ggml-org/whisper.cpp:main-vulkan-<sha>` image, read-only and with no
   capabilities. It gets `/dev/dri/renderD128`, publishes on loopback only, and
-  reads the model from `~/srv/whisper/models`.
+  reads the model from `~/Projects/dolza-services/whisper/models`.
 - Model: `ggml-large-v3-turbo-q5_0.bin` from `huggingface.co/ggerganov/whisper.cpp`.
 - `ptt`: symlinked into `~/.local/bin`. The first press starts recording and
   the second sends the clip.
@@ -23,7 +23,7 @@ mic ─ pw-record ─ ptt ─ HTTP 127.0.0.1:8178 ─ whisper.cpp (Vulkan, 890M)
 - `speak` and `josui-speak.service`: the reply voice. `speak` is symlinked
   as `~/.local/bin/josui-speak`. It uses Piper (`uv tool install piper-tts`)
   with the `en_US-ryan-high` voice from `huggingface.co/rhasspy/piper-voices`,
-  in `~/srv/piper/voices`. It renders a sentence in about 1.6 s on the CPU.
+  in `~/Projects/dolza-services/piper/voices`. It renders a sentence in about 1.6 s on the CPU.
   Code blocks, links and markdown are dropped. An answer longer than
   `SPEAK_MAX_CHARS` (900) is cut at a sentence, and the rest stays on screen.
 

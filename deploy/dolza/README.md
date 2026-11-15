@@ -9,7 +9,7 @@ live files are the ones that run; when one changes, update the copy here too.
   follow from that:
   - The members share one PID namespace. With separate namespaces every
     container's Claude is pid 1, and they overwrite one another's `1.json`.
-  - `~/srv/agents/sessions` and `~/srv/agents/run/cc-socks` are bind-mounted
+  - `~/Projects/dolza-services/agents/sessions` and `~/Projects/dolza-services/agents/run/cc-socks` are bind-mounted
     into every member at the same paths, along with `/etc/machine-id`.
   - The pod's `ExecStartPre` clears both directories, because pids start again
     from 1 when the pod does.
@@ -22,7 +22,7 @@ live files are the ones that run; when one changes, update the copy here too.
   the workers by message, and systemd keeps them running.
 - `vertex@.container`: Vertex worker N (`vertex@1` … `vertex@4`). Attach with
   `podman exec -it vertexN tmux attach -t dev`. It needs
-  `~/srv/vertexN/data/state/.claude` to exist and be owned by the host user
+  `~/Projects/dolza-services/vertexN/data/state/.claude` to exist and be owned by the host user
   before its first start. Otherwise podman creates that directory as root when
   it mounts the sessions directory inside it.
 
