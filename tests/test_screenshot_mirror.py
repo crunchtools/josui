@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -11,6 +12,7 @@ from pathlib import Path
 SCRIPT = Path(__file__).resolve().parent.parent / "tools/screenshot-mirror/screenshot-mirror"
 
 
+@unittest.skipUnless(shutil.which("rsync"), "rsync is not installed here")
 class ScreenshotMirrorTest(unittest.TestCase):
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()
@@ -51,6 +53,13 @@ class ScreenshotMirrorTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("not mounted", result.stderr)
         self.assertEqual([p.name for p in self.dst.iterdir()], ["a.png"])
+
+    def test_an_edited_file_is_mirrored(self) -> None:
+        (self.src / "a.png").write_bytes(b"one")
+        self.once()
+        (self.src / "a.png").write_bytes(b"two!")
+        self.once()
+        self.assertEqual((self.dst / "a.png").read_bytes(), b"two!")
 
     def test_an_empty_source_never_wipes_the_copy(self) -> None:
         (self.src / "a.png").write_bytes(b"a")

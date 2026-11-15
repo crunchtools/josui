@@ -32,11 +32,15 @@ sync_once() {
 
 if [ "${1:-}" = --once ]; then sync_once; exit; fi
 
-# Only rsync when the folder changed: its mtime moves when a file is added,
-# removed or renamed. A failed pass is retried on the next look.
+# Only rsync when something changed. The fingerprint is every file's name,
+# size and nanosecond mtime: the folder's own mtime would miss a file edited
+# in place and two changes in one second. A failed pass is retried.
+fingerprint() {
+  find "$src" -maxdepth 1 -type f ! -name '.*' -printf '%f\t%s\t%T@\n' 2>/dev/null | sort | md5sum
+}
 last=
 while :; do
-  stamp=$(stat -c %Y "$src" 2>/dev/null || echo missing)
+  stamp=$(fingerprint)
   if [ "$stamp" != "$last" ]; then
     sync_once && last=$stamp
   fi
