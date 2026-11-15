@@ -1,4 +1,6 @@
 [Unit]
+Requires=srv-secrets@ssh-josui.service
+After=srv-secrets@ssh-josui.service
 # Secrets come from breetai's OpenBao via the runtime dir (RT#1604), not from
 # a plaintext file in ~/Projects/dolza-services. Requires= on the ONESHOT is right: no secrets,
 # no start. Never Requires= on openbao itself.
@@ -44,6 +46,12 @@ Tmpfs=/run/agents:rw,nosuid,mode=1777
 Volume=%h/Projects/dolza-services/agents/run/cc-socks:/run/agents/cc-socks:z
 Volume=%h/Projects/dolza-services/agents/machine-id:/etc/machine-id:ro,z
 PodmanArgs=--memory=4g --memory-swap=4g
+# Its own ssh key (OpenBao kv dolza/ssh-josui) and the shared ssh config and
+# known_hosts; the entrypoint copies them to tmpfs (constitution 3.0.0).
+Environment=JOSUI_SSH_DIR=/etc/josui-ssh
+Volume=%t/srv-secrets/ssh-josui/id_ed25519:/etc/josui-ssh/id_ed25519:ro,Z
+Volume=%h/Projects/dolza-services/agents-ssh/config:/etc/josui-ssh/config:ro,z
+Volume=%h/Projects/dolza-services/agents-ssh/known_hosts:/etc/josui-ssh/known_hosts:ro,z
 
 [Service]
 Restart=always

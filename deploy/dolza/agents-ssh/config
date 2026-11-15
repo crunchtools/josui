@@ -1,0 +1,25 @@
+# Dolza admin seats (developer constitution 3.0.0). Shared by every seat;
+# each seat's own key is ~/.ssh/id_ed25519 (tmpfs). Host keys are pinned in
+# known_hosts by alias, taken from Dolza's own trusted known_hosts.
+Host gloval
+  HostName 10.44.0.1
+  Port 22422
+  User root
+Host exedore
+  HostName 10.44.0.24
+  User root
+Host dolza
+  HostName 10.44.0.20
+  User smccarty
+Host breetai
+  HostName 10.44.0.10
+  User smccarty
+Host *
+  IdentitiesOnly yes
+  IdentityFile ~/.ssh/id_ed25519
+  StrictHostKeyChecking yes
+  UserKnownHostsFile ~/.ssh/known_hosts
+  HostKeyAlias %n
+  ForwardAgent no
+  ForwardX11 no
+  ServerAliveInterval 30
