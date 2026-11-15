@@ -27,14 +27,21 @@ sync_once() {
     log "$src is missing or empty; copy left as it is"; return 1
   fi
   mkdir -p "$dst"
-  # Copy what is new or changed, then drop what the source no longer has.
-  # Hidden files (pCloud's in-progress temporaries) are never mirrored.
+  # The folder is flat: screenshots only, no subfolders. Copy what is new or
+  # changed (size or mtime; cp -p keeps the mtime), then drop what the source
+  # no longer has. Hidden files (pCloud's in-progress temporaries) and
+  # symlinks (which would pull in a file from elsewhere) are never mirrored.
+  # A copy lands under a hidden temporary name and is renamed into place, so
+  # a seat never reads half a file; a failed copy leaves the old one.
   local f name
   for f in "$src"/*; do
-    [ -f "$f" ] || continue
+    [ -f "$f" ] && ! [ -L "$f" ] || continue
     name=${f##*/}
-    if ! cmp -s "$f" "$dst/$name"; then
-      cp -p "$f" "$dst/.$name.part" && mv -f "$dst/.$name.part" "$dst/$name"
+    if [ "$(stat -c '%s %Y' "$f")" != "$(stat -c '%s %Y' "$dst/$name" 2>/dev/null)" ]; then
+      if ! { cp -p "$f" "$dst/.$name.part" && mv -f "$dst/.$name.part" "$dst/$name"; }; then
+        rm -f "$dst/.$name.part"
+        log "could not copy $name; the previous copy stays"
+      fi
     fi
   done
   for f in "$dst"/*; do

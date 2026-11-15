@@ -59,6 +59,27 @@ class ScreenshotMirrorTest(unittest.TestCase):
         self.once()
         self.assertEqual((self.dst / "a.png").read_bytes(), b"two!")
 
+    def test_a_symlink_in_the_source_is_never_followed(self) -> None:
+        secret = self.src.parent / "secret.txt"
+        secret.write_text("not a screenshot\n")
+        (self.src / "a.png").write_bytes(b"a")
+        (self.src / "leak.png").symlink_to(secret)
+        self.once()
+        self.assertEqual(sorted(p.name for p in self.dst.iterdir()), ["a.png"])
+
+    def test_a_failed_copy_keeps_the_previous_one(self) -> None:
+        (self.src / "a.png").write_bytes(b"one")
+        self.once()
+        (self.src / "a.png").write_bytes(b"two, longer")
+        self.dst.chmod(0o555)  # nothing can be written into the copy
+        try:
+            result = self.once()
+        finally:
+            self.dst.chmod(0o755)
+        self.assertIn("could not copy a.png", result.stderr)
+        self.assertEqual((self.dst / "a.png").read_bytes(), b"one")
+        self.assertEqual(sorted(p.name for p in self.dst.iterdir()), ["a.png"])
+
     def test_an_empty_source_never_wipes_the_copy(self) -> None:
         (self.src / "a.png").write_bytes(b"a")
         self.once()
