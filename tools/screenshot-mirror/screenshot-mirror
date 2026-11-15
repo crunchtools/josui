@@ -33,7 +33,7 @@ sync_once() {
   # symlinks (which would pull in a file from elsewhere) are never mirrored.
   # A copy lands under a hidden temporary name and is renamed into place, so
   # a seat never reads half a file; a failed copy leaves the old one.
-  local f name
+  local f name failed=0
   for f in "$src"/*; do
     [ -f "$f" ] && ! [ -L "$f" ] || continue
     name=${f##*/}
@@ -41,6 +41,7 @@ sync_once() {
       if ! { cp -p "$f" "$dst/.$name.part" && mv -f "$dst/.$name.part" "$dst/$name"; }; then
         rm -f "$dst/.$name.part"
         log "could not copy $name; the previous copy stays"
+        failed=1
       fi
     fi
   done
@@ -49,6 +50,9 @@ sync_once() {
     name=${f##*/}
     [ -f "$src/$name" ] || rm -f "$f"
   done
+  # A failed copy fails the pass, so the loop does not record the fingerprint
+  # and tries again on the next look.
+  return "$failed"
 }
 
 if [ "${1:-}" = --once ]; then sync_once; exit; fi

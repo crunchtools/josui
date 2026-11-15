@@ -77,6 +77,7 @@ class ScreenshotMirrorTest(unittest.TestCase):
         finally:
             self.dst.chmod(0o755)
         self.assertIn("could not copy a.png", result.stderr)
+        self.assertNotEqual(result.returncode, 0, "a failed copy must fail the pass so it is retried")
         self.assertEqual((self.dst / "a.png").read_bytes(), b"one")
         self.assertEqual(sorted(p.name for p in self.dst.iterdir()), ["a.png"])
 
