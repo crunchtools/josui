@@ -18,8 +18,13 @@ class SeatSshTest(unittest.TestCase):
         root = Path(tmp.name)
         self.pubkeys = root / "pubkeys"
         self.pubkeys.mkdir()
+        self.keys = {}
         for seat in ("dmax1", "dmax2"):
-            (self.pubkeys / f"{seat}.pub").write_text(f"ssh-ed25519 KEY{seat} dolza-{seat}\n")
+            subprocess.run(
+                ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", f"dolza-{seat}", "-f", str(root / seat)], check=True
+            )
+            self.keys[seat] = (root / f"{seat}.pub").read_text().split()[1]
+            (root / f"{seat}.pub").rename(self.pubkeys / f"{seat}.pub")
         self.local = root / "local/authorized_keys"
         self.remote = root / "remote/authorized_keys"
         self.remote.parent.mkdir()
@@ -39,8 +44,8 @@ class SeatSshTest(unittest.TestCase):
             self.assertEqual(
                 lines,
                 [
-                    'from="10.44.0.20",no-agent-forwarding,no-X11-forwarding ssh-ed25519 KEYdmax1 dolza-dmax1',
-                    'from="10.44.0.20",no-agent-forwarding,no-X11-forwarding ssh-ed25519 KEYdmax2 dolza-dmax2',
+                    f'from="10.44.0.20",no-agent-forwarding,no-X11-forwarding ssh-ed25519 {self.keys["dmax1"]} dolza-dmax1',
+                    f'from="10.44.0.20",no-agent-forwarding,no-X11-forwarding ssh-ed25519 {self.keys["dmax2"]} dolza-dmax2',
                 ],
             )
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
@@ -48,12 +53,17 @@ class SeatSshTest(unittest.TestCase):
 
     def test_granting_twice_or_after_a_rotation_keeps_one_line(self) -> None:
         self.run_tool("grant")
-        (self.pubkeys / "dmax1.pub").write_text("ssh-ed25519 ROTATED dolza-dmax1\n")
+        old = self.keys["dmax1"]
+        (self.pubkeys / "dmax1.pub").unlink()
+        rotated = self.pubkeys.parent / "rotated"
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(rotated)], check=True)
+        new = (self.pubkeys.parent / "rotated.pub").read_text().split()[1]
+        (self.pubkeys.parent / "rotated.pub").rename(self.pubkeys / "dmax1.pub")
         self.run_tool("grant")
         text = self.remote.read_text()
         self.assertEqual(text.count("dolza-dmax1"), 1)
-        self.assertIn("ROTATED", text)
-        self.assertNotIn("KEYdmax1", text)
+        self.assertIn(new, text)
+        self.assertNotIn(old, text)
 
     def test_revoke_removes_only_that_seat(self) -> None:
         self.run_tool("grant")
@@ -82,6 +92,43 @@ class SeatSshTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("not an IPv4 address", result.stderr)
         self.assertFalse(self.local.exists())
+
+    def run_from(self, value: str) -> subprocess.CompletedProcess[str]:
+        env = {**os.environ, "SEAT_SSH_PUBKEYS": str(self.pubkeys), "SEAT_SSH_HOSTS": self.hosts, "SEAT_SSH_FROM": value}
+        return subprocess.run(["bash", str(SCRIPT), "grant"], env=env, capture_output=True, text=True, check=False)
+
+    def test_address_bounds(self) -> None:
+        for bad in ("256.0.0.1", "10.44.0.300", "10.44.0.0/33", "10.44.0", "10.44.0.20/"):
+            with self.subTest(bad=bad):
+                self.assertIn("not an IPv4 address", self.run_from(bad).stderr)
+        for good in ("255.255.255.255", "10.44.0.0/32", "10.44.0.0/0", "0.0.0.0"):
+            with self.subTest(good=good):
+                self.assertEqual(self.run_from(good).returncode, 0, good)
+
+    def test_an_unsupported_key_type_is_refused(self) -> None:
+        (self.pubkeys / "dmax1.pub").write_text(f"ssh-dss {self.keys['dmax1']} dolza-dmax1\n")
+        result = self.run_tool("grant", "dmax1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unexpected key type", result.stderr)
+
+    def test_base64_that_is_not_a_key_is_refused(self) -> None:
+        (self.pubkeys / "dmax1.pub").write_text("ssh-ed25519 AA=== dolza-dmax1\n")
+        result = self.run_tool("grant", "dmax1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not a valid ssh-ed25519 public key", result.stderr)
+
+    def test_a_filter_failure_leaves_the_file_alone(self) -> None:
+        self.remote.write_text("ssh-ed25519 SCOTT scott@breetai\n")
+        fake = self.pubkeys.parent / "fakebin"
+        fake.mkdir()
+        (fake / "grep").write_text("#!/bin/sh\nexit 2\n")
+        (fake / "grep").chmod(0o755)
+        env = {**os.environ, "PATH": f"{fake}:{os.environ['PATH']}",
+               "SEAT_SSH_PUBKEYS": str(self.pubkeys), "SEAT_SSH_HOSTS": f"remote|bash -c|{self.remote}"}
+        result = subprocess.run(["bash", str(SCRIPT), "grant"], env=env, capture_output=True, text=True, check=False)
+        self.assertIn("remote: unreachable or failed", result.stdout)
+        self.assertEqual(self.remote.read_text(), "ssh-ed25519 SCOTT scott@breetai\n")
+        self.assertEqual([p.name for p in self.remote.parent.iterdir()], ["authorized_keys"])
 
     def test_a_public_key_that_is_not_base64_is_refused(self) -> None:
         (self.pubkeys / "dmax1.pub").write_text('ssh-ed25519 AAAA\nevil dolza-dmax1\n')
