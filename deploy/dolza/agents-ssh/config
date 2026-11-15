@@ -5,21 +5,24 @@ Host gloval
   HostName 10.44.0.1
   Port 22422
   User root
+  HostKeyAlias gloval
 Host exedore
   HostName 10.44.0.24
   User root
+  HostKeyAlias exedore
 Host dolza
   HostName 10.44.0.20
   User smccarty
+  HostKeyAlias dolza
 Host breetai
   HostName 10.44.0.10
   User smccarty
+  HostKeyAlias breetai
 Host *
   IdentitiesOnly yes
   IdentityFile ~/.ssh/id_ed25519
   StrictHostKeyChecking yes
   UserKnownHostsFile ~/.ssh/known_hosts
-  HostKeyAlias %n
   ForwardAgent no
   ForwardX11 no
   ServerAliveInterval 30
