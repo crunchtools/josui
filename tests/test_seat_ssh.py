@@ -194,6 +194,18 @@ class SeatAttachTest(unittest.TestCase):
         self.assertIn("\033]0;Dolza 2 - Vertex\007", out)
         self.assertNotIn("\033]0;", self.attach("m1").stdout)
 
+    def test_every_kind_of_seat_gets_its_session_name(self) -> None:
+        env = {**os.environ, "PATH": f"{self.bin}:{os.environ['PATH']}"}
+        for link, title in (("v3", "Dolza 3 - Vertex"), ("m2", "Dolza 2 - Max"), ("x4", "Exedore 4 - Max"), ("prime", "Josui Prime")):
+            with self.subTest(link=link):
+                (self.bin / link).symlink_to(SEAT)
+                primary, secondary = pty.openpty()
+                subprocess.run([str(self.bin / link)], env=env, stdout=secondary, check=False)
+                os.close(secondary)
+                out = os.read(primary, 4096).decode()
+                os.close(primary)
+                self.assertIn(f"\033]0;{title}\007", out)
+
     def test_shell_opens_the_shell_window(self) -> None:
         self.assertTrue(self.attach("v3", "shell").stdout.strip().endswith("-t dev:1"))
 

@@ -1,0 +1,44 @@
+#!/bin/bash
+# screenshot-mirror -- keep a local copy of Scott's screenshots for the Dolza
+# agent seats. The real folder is on the pCloud FUSE mount, which the
+# container runtime cannot open from the seats' user namespace; each seat
+# mounts this copy read-only at the same host paths, so a dragged file's path
+# resolves inside the seat.
+#
+#   SCREENSHOT_SRC    source folder   (default ~/pCloudDrive/Autosync/Screenshots)
+#   SCREENSHOT_MOUNT  the FUSE mount it must be on (default ~/pCloudDrive)
+#   SCREENSHOT_DST    the local copy  (default ~/Projects/dolza-services/screenshots)
+#   SCREENSHOT_EVERY  seconds between looks (default 3)
+#
+# `screenshot-mirror --once` syncs once and exits (tests, and by hand).
+set -uo pipefail
+src=${SCREENSHOT_SRC:-$HOME/pCloudDrive/Autosync/Screenshots}
+mnt=${SCREENSHOT_MOUNT:-$HOME/pCloudDrive}
+dst=${SCREENSHOT_DST:-$HOME/Projects/dolza-services/screenshots}
+every=${SCREENSHOT_EVERY:-3}
+
+log() { echo "screenshot-mirror: $*" >&2; }
+
+# One pass. A missing mount or an empty source is never mirrored: with
+# --delete either would wipe the copy the seats are reading.
+sync_once() {
+  if ! mountpoint -q "$mnt"; then log "$mnt is not mounted; copy left as it is"; return 1; fi
+  if ! [ -d "$src" ] || [ -z "$(ls -A "$src" 2>/dev/null)" ]; then
+    log "$src is missing or empty; copy left as it is"; return 1
+  fi
+  mkdir -p "$dst"
+  rsync -a --delete --exclude='.*' "$src/" "$dst/"
+}
+
+if [ "${1:-}" = --once ]; then sync_once; exit; fi
+
+# Only rsync when the folder changed: its mtime moves when a file is added,
+# removed or renamed. A failed pass is retried on the next look.
+last=
+while :; do
+  stamp=$(stat -c %Y "$src" 2>/dev/null || echo missing)
+  if [ "$stamp" != "$last" ]; then
+    sync_once && last=$stamp
+  fi
+  sleep "$every"
+done
