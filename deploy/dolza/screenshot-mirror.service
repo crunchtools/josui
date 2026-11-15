@@ -1,0 +1,14 @@
+[Unit]
+# A local, read-only-to-the-seats copy of Scott's screenshots. The real folder
+# is on the pCloud FUSE mount, which the container runtime cannot open from
+# the seats' user namespace; a dragged file's path still resolves inside a
+# seat because the copy is mounted at the same host paths.
+Description=Mirror ~/Pictures/Screenshots for the agent seats
+
+[Service]
+ExecStart=/bin/bash -c 'while :; do rsync -a --delete --exclude=".*" "%h/pCloudDrive/Autosync/Screenshots/" "%h/Projects/dolza-services/screenshots/" 2>/dev/null; sleep 3; done'
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
