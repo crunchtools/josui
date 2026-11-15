@@ -178,8 +178,8 @@ class SeatAttachTest(unittest.TestCase):
         self.assertEqual(self.attach("prime").stdout.strip(), f"podman exec -it josui {style}")
         # Through ssh the command is quoted for the remote shell.
         remote = self.attach("x1").stdout.strip()
-        self.assertTrue(remote.startswith("ssh -t exedore podman exec -it max1 'tmux' '-u' 'set' '-g' 'status-style'"), remote)
-        self.assertIn("';'", remote)
+        quoted = " ".join(f"'{word}'" for word in style.split(" "))
+        self.assertEqual(remote, f"ssh -t exedore podman exec -it max1 {quoted}")
 
     def test_shell_opens_the_shell_window(self) -> None:
         self.assertTrue(self.attach("v3", "shell").stdout.strip().endswith("-t dev:1"))
