@@ -81,6 +81,23 @@ class ScreenshotMirrorTest(unittest.TestCase):
         self.assertEqual((self.dst / "a.png").read_bytes(), b"one")
         self.assertEqual(sorted(p.name for p in self.dst.iterdir()), ["a.png"])
 
+    def test_a_source_with_only_hidden_files_never_wipes_the_copy(self) -> None:
+        (self.src / "a.png").write_bytes(b"a")
+        self.once()
+        (self.src / "a.png").unlink()
+        (self.src / ".pcloud-tmp").write_bytes(b"x")
+        result = self.once()
+        self.assertIn("missing or empty", result.stderr)
+        self.assertEqual([p.name for p in self.dst.iterdir()], ["a.png"])
+
+    def test_same_size_change_is_mirrored(self) -> None:
+        (self.src / "a.png").write_bytes(b"one")
+        self.once()
+        (self.src / "a.png").write_bytes(b"two")
+        os.utime(self.src / "a.png", ns=(1, 1_700_000_000_123_456_789))
+        self.once()
+        self.assertEqual((self.dst / "a.png").read_bytes(), b"two")
+
     def test_an_empty_source_never_wipes_the_copy(self) -> None:
         (self.src / "a.png").write_bytes(b"a")
         self.once()
