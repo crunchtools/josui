@@ -191,7 +191,7 @@ class SeatAttachTest(unittest.TestCase):
         os.close(secondary)
         out = os.read(primary, 4096).decode()
         os.close(primary)
-        self.assertIn("\033]0;Dolza (Vertex) 2\007", out)
+        self.assertIn("\033]0;Dolza 2 - Vertex\007", out)
         self.assertNotIn("\033]0;", self.attach("m1").stdout)
 
     def test_shell_opens_the_shell_window(self) -> None:
