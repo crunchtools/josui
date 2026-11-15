@@ -15,7 +15,7 @@ NoNewPrivileges=true
 DropCapability=all
 AddDevice=/dev/dri/renderD128
 PublishPort=127.0.0.1:8178:8178
-Volume=%h/srv/whisper/models:/models:ro,Z
+Volume=%h/Projects/dolza-services/whisper/models:/models:ro,Z
 Entrypoint=/usr/local/bin/whisper-server
 Exec=--model /models/ggml-large-v3-turbo-q5_0.bin --host 0.0.0.0 --port 8178 --threads 8 --language en --no-timestamps
 PodmanArgs=--memory=3g

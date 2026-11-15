@@ -12,8 +12,8 @@ Like ptt, the audio never enters a container: Prime writes text, and the host
 turns it into sound.
 
   SPEAK_TRANSCRIPTS  directory holding Prime's transcripts
-                     (default ~/srv/josui/data/state/.claude/projects)
-  SPEAK_VOICE        Piper .onnx voice (default ~/srv/piper/voices/en_US-ryan-high.onnx)
+                     (default ~/Projects/dolza-services/josui/data/state/.claude/projects)
+  SPEAK_VOICE        Piper .onnx voice (default ~/Projects/dolza-services/piper/voices/en_US-ryan-high.onnx)
   SPEAK_MAX_CHARS    longest answer read in full; longer ones are cut at a
                      sentence and end with "the rest is on screen" (default 900)
 """
@@ -30,8 +30,8 @@ import time
 from pathlib import Path
 
 HOME = Path.home()
-TRANSCRIPTS = Path(os.environ.get("SPEAK_TRANSCRIPTS", HOME / "srv/josui/data/state/.claude/projects"))
-VOICE = Path(os.environ.get("SPEAK_VOICE", HOME / "srv/piper/voices/en_US-ryan-high.onnx"))
+TRANSCRIPTS = Path(os.environ.get("SPEAK_TRANSCRIPTS", HOME / "Projects/dolza-services/josui/data/state/.claude/projects"))
+VOICE = Path(os.environ.get("SPEAK_VOICE", HOME / "Projects/dolza-services/piper/voices/en_US-ryan-high.onnx"))
 MAX_CHARS = int(os.environ.get("SPEAK_MAX_CHARS", "900"))
 RUNTIME = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp")) / "ptt"
 MARKER = RUNTIME / "voice-turn"

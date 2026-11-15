@@ -31,15 +31,17 @@ Environment="JOSUI_NAME=Dolza (Max) %i"
 Environment=JOSUI_WORKDIR=/home/podman/work
 Environment=JOSUI_PERMISSION_MODE=bypassPermissions
 Environment=XDG_RUNTIME_DIR=/run/agents
-Volume=%h/srv/agents/developer-identity:/etc/josui:ro
-Volume=%h/srv/josui/data/josui-skills:/var/lib/josui/josui-skills:ro
-Volume=%h/srv/dmax%i/data/state:/home/podman
-Volume=%h/srv/dmax%i/data/containers:/home/podman/.local/share/containers
-Volume=%h/srv/dmax%i/data/audit:/var/log/josui
-Volume=%h/srv/agents/sessions:/home/podman/.claude/sessions
+Volume=%h/Projects/dolza-services/agents/developer-identity:/etc/josui:ro
+Volume=%h/Projects/dolza-services/josui/data/josui-skills:/var/lib/josui/josui-skills:ro
+Volume=%h/Projects/dolza-services/dmax%i/data/state:/home/podman
+Volume=%h/Projects/dolza-services/dmax%i/data/containers:/home/podman/.local/share/containers
+Volume=%h/Projects/dolza-services/dmax%i/data/audit:/var/log/josui
+# The work tree lives under ~/Projects so it is backed up with the rest.
+Volume=%h/Projects/dolza-max%i:/home/podman/work
+Volume=%h/Projects/dolza-services/agents/sessions:/home/podman/.claude/sessions
 Tmpfs=/run/agents:rw,nosuid,mode=1777
-Volume=%h/srv/agents/run/cc-socks:/run/agents/cc-socks
-Volume=%h/srv/agents/machine-id:/etc/machine-id:ro
+Volume=%h/Projects/dolza-services/agents/run/cc-socks:/run/agents/cc-socks
+Volume=%h/Projects/dolza-services/agents/machine-id:/etc/machine-id:ro
 PodmanArgs=--memory=4g --memory-swap=4g
 
 [Service]

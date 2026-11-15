@@ -1,6 +1,6 @@
 [Unit]
 # Secrets come from breetai's OpenBao via the runtime dir (RT#1604), not from
-# a plaintext file in ~/srv. Requires= on the ONESHOT is right: no secrets,
+# a plaintext file in ~/Projects/dolza-services. Requires= on the ONESHOT is right: no secrets,
 # no start. Never Requires= on openbao itself.
 Requires=srv-secrets@josui.service
 After=srv-secrets@josui.service
@@ -33,16 +33,16 @@ Environment=JOSUI_MATRIX_ALLOW=<owner's RCS puppet id, from gloval's josui.env>
 Environment="JOSUI_NAME=Josui Prime"
 Environment=JOSUI_WORKDIR=/home/podman/work
 Environment=XDG_RUNTIME_DIR=/run/agents
-Volume=%h/srv/josui/config/identity:/etc/josui:ro,Z
+Volume=%h/Projects/dolza-services/josui/config/identity:/etc/josui:ro,Z
 Volume=%t/srv-secrets/josui/matrix-token:/etc/josui-matrix/token:ro,Z
-Volume=%h/srv/josui/data/state:/home/podman:Z
-Volume=%h/srv/josui/data/audit:/var/log/josui:Z
-Volume=%h/srv/josui/data/josui-skills:/var/lib/josui/josui-skills:Z
+Volume=%h/Projects/dolza-services/josui/data/state:/home/podman:Z
+Volume=%h/Projects/dolza-services/josui/data/audit:/var/log/josui:Z
+Volume=%h/Projects/dolza-services/josui/data/josui-skills:/var/lib/josui/josui-skills:Z
 # Peer discovery, shared by every member of the pod.
-Volume=%h/srv/agents/sessions:/home/podman/.claude/sessions:z
+Volume=%h/Projects/dolza-services/agents/sessions:/home/podman/.claude/sessions:z
 Tmpfs=/run/agents:rw,nosuid,mode=1777
-Volume=%h/srv/agents/run/cc-socks:/run/agents/cc-socks:z
-Volume=%h/srv/agents/machine-id:/etc/machine-id:ro,z
+Volume=%h/Projects/dolza-services/agents/run/cc-socks:/run/agents/cc-socks:z
+Volume=%h/Projects/dolza-services/agents/machine-id:/etc/machine-id:ro,z
 PodmanArgs=--memory=4g --memory-swap=4g
 
 [Service]
