@@ -1,0 +1,12 @@
+[Unit]
+# A local copy of Scott's screenshots for the Dolza agent seats (josui
+# tools/screenshot-mirror). Never mirrors an unmounted or empty pCloud folder.
+Description=Mirror ~/Pictures/Screenshots for the agent seats
+
+[Service]
+ExecStart=%h/Projects/crunchtools/josui/tools/screenshot-mirror/screenshot-mirror
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

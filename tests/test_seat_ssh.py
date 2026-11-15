@@ -173,7 +173,7 @@ class SeatAttachTest(unittest.TestCase):
         return subprocess.run([str(self.bin / link), *args], env=env, capture_output=True, text=True, check=False)
 
     def test_each_kind_of_seat_reaches_its_container(self) -> None:
-        style = "tmux -u set -g status-style bg=default,fg=colour244 ; set -g window-status-current-style fg=colour250,bold ; set -g terminal-overrides ,*:Tc ; attach -t dev:0"
+        style = "tmux -u set -g status-style bg=default,fg=colour244 ; set -g mouse off ; set -g window-status-current-style fg=colour250,bold ; set -g terminal-overrides ,*:Tc ; attach -t dev:0"
         self.assertEqual(self.attach("v2").stdout.strip(), f"podman exec -it vertex2 {style}")
         self.assertEqual(self.attach("m4").stdout.strip(), f"podman exec -it dmax4 {style}")
         self.assertEqual(self.attach("prime").stdout.strip(), f"podman exec -it josui {style}")
@@ -191,8 +191,20 @@ class SeatAttachTest(unittest.TestCase):
         os.close(secondary)
         out = os.read(primary, 4096).decode()
         os.close(primary)
-        self.assertIn("\033]0;Dolza (Vertex) 2\007", out)
+        self.assertIn("\033]0;Dolza 2 - Vertex\007", out)
         self.assertNotIn("\033]0;", self.attach("m1").stdout)
+
+    def test_every_kind_of_seat_gets_its_session_name(self) -> None:
+        env = {**os.environ, "PATH": f"{self.bin}:{os.environ['PATH']}"}
+        for link, title in (("v3", "Dolza 3 - Vertex"), ("m2", "Dolza 2 - Max"), ("x4", "Exedore 4 - Max"), ("prime", "Josui Prime")):
+            with self.subTest(link=link):
+                (self.bin / link).symlink_to(SEAT)
+                primary, secondary = pty.openpty()
+                subprocess.run([str(self.bin / link)], env=env, stdout=secondary, check=False)
+                os.close(secondary)
+                out = os.read(primary, 4096).decode()
+                os.close(primary)
+                self.assertIn(f"\033]0;{title}\007", out)
 
     def test_shell_opens_the_shell_window(self) -> None:
         self.assertTrue(self.attach("v3", "shell").stdout.strip().endswith("-t dev:1"))

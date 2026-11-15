@@ -29,7 +29,7 @@ Environment=JOSUI_MAX_TOOL_CALLS=500
 Environment=JOSUI_MAX_REPEAT=5
 Environment=JOSUI_ANSWER_PERMISSIONS=1
 Environment=JOSUI_MODE=worker
-Environment="JOSUI_NAME=Dolza (Vertex) %i"
+Environment="JOSUI_NAME=Dolza %i - Vertex"
 Environment=JOSUI_WORKDIR=/home/podman/work
 Environment=JOSUI_PERMISSION_MODE=bypassPermissions
 Environment=XDG_RUNTIME_DIR=/run/agents

@@ -1,0 +1,3 @@
+{
+  "statusLine": {"type": "command", "command": "bash /etc/josui/statusline.sh", "padding": 0}
+}

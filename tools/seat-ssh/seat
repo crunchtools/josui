@@ -2,8 +2,8 @@
 # seat -- attach to a worker's Claude Code session. Installed as one link per
 # seat; the link's name says which:
 #
-#   v1..v4   Dolza (Vertex) 1-4      m1..m4   Dolza (Max) 1-4
-#   x1..x4   Exedore (Max) 1-4       prime    Josui Prime
+#   v1..v4   Dolza 1-4 - Vertex      m1..m4   Dolza 1-4 - Max
+#   x1..x4   Exedore 1-4 - Max       prime    Josui Prime
 #
 # `v2 shell` opens the seat's shell window instead. Ctrl-b d detaches and
 # leaves the session running.
@@ -11,17 +11,20 @@ set -euo pipefail
 name=$(basename "$0")
 window=0
 [ "${1:-}" = shell ] && window=1
-# tmux's own bar in quiet grey instead of green, and full color passed
-# through to Claude Code; then attach.
+# tmux's own bar in quiet grey instead of green, full color passed through
+# to Claude Code, and the mouse left to the terminal (right-click, select,
+# copy and paste work as anywhere else; scroll back with Ctrl-b [); then
+# attach.
 tmux_cmd=(tmux -u set -g status-style "bg=default,fg=colour244" ";"
+  set -g mouse off ";"
   set -g window-status-current-style "fg=colour250,bold" ";"
   set -g terminal-overrides ",*:Tc" ";" attach -t "dev:$window")
 # The terminal tab is titled with the seat's name, so several are told apart
 # at a glance; tmux leaves the title alone (set-titles is off by default).
 case "$name" in
-  v[1-4]) label="Dolza (Vertex) ${name#v}" ;;
-  m[1-4]) label="Dolza (Max) ${name#m}" ;;
-  x[1-4]) label="Exedore (Max) ${name#x}" ;;
+  v[1-4]) label="Dolza ${name#v} - Vertex" ;;
+  m[1-4]) label="Dolza ${name#m} - Max" ;;
+  x[1-4]) label="Exedore ${name#x} - Max" ;;
   prime)  label="Josui Prime" ;;
   *)      label= ;;
 esac
@@ -32,6 +35,6 @@ case "$name" in
   x[1-4])  exec ssh -t exedore podman exec -it "max${name#x}" "${tmux_cmd[@]@Q}" ;;
   prime)   exec podman exec -it josui "${tmux_cmd[@]}" ;;
   *) printf '%s\n' "seat: link this script as v1..v4, m1..m4, x1..x4 or prime" \
-       "  v = Dolza (Vertex), m = Dolza (Max), x = Exedore (Max); add 'shell' for the shell window"
+       "  v = Dolza N - Vertex, m = Dolza N - Max, x = Exedore N - Max; add 'shell' for the shell window"
      exit 2 ;;
 esac

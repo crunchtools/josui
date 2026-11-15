@@ -17,3 +17,9 @@ path = ".pre-commit-config.yaml"
 pattern = "ruff-check"
 justification = "ruff runs inside the sdlc-commit hook from python-sdlc (constitution XII v1.30.0), configured by [tool.ruff] in pyproject.toml; Gourmand looks for a literal ruff hook id"
 classification = "by_design"
+
+[[exceptions]]
+check = "CH001-absolute_paths"
+path = "deploy/dolza/30-statusline.json"
+justification = "A managed-settings drop-in mounted into the seat containers. Claude Code runs the status line command by the absolute path where the unit mounts the script; there is no relative form."
+classification = "by_design"
