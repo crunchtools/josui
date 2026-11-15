@@ -11,11 +11,16 @@ set -euo pipefail
 name=$(basename "$0")
 window=0
 [ "${1:-}" = shell ] && window=1
+# tmux's own bar in quiet grey instead of green, and full color passed
+# through to Claude Code; then attach.
+tmux_cmd=(tmux -u set -g status-style "bg=default,fg=colour244" ";"
+  set -g window-status-current-style "fg=colour250,bold" ";"
+  set -g terminal-overrides ",*:Tc" ";" attach -t "dev:$window")
 case "$name" in
-  v[1-4])  exec podman exec -it "vertex${name#v}" tmux -u attach -t "dev:$window" ;;
-  m[1-4])  exec podman exec -it "dmax${name#m}" tmux -u attach -t "dev:$window" ;;
-  x[1-4])  exec ssh -t exedore podman exec -it "max${name#x}" tmux -u attach -t "dev:$window" ;;
-  prime)   exec podman exec -it josui tmux -u attach -t "dev:$window" ;;
+  v[1-4])  exec podman exec -it "vertex${name#v}" "${tmux_cmd[@]}" ;;
+  m[1-4])  exec podman exec -it "dmax${name#m}" "${tmux_cmd[@]}" ;;
+  x[1-4])  exec ssh -t exedore podman exec -it "max${name#x}" "${tmux_cmd[@]@Q}" ;;
+  prime)   exec podman exec -it josui "${tmux_cmd[@]}" ;;
   *) printf '%s\n' "seat: link this script as v1..v4, m1..m4, x1..x4 or prime" \
        "  v = Dolza (Vertex), m = Dolza (Max), x = Exedore (Max); add 'shell' for the shell window"
      exit 2 ;;
