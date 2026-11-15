@@ -11,7 +11,7 @@
 #
 # Build happens in GitHub Actions (.github/workflows/container.yml, the constitution container-release workflow).
 
-FROM registry.access.redhat.com/ubi10/ubi-minimal@sha256:bcecd3e74c9d03eb1a596c6c8f366775a289d422ac5925ec1539924d762ebf23
+FROM registry.access.redhat.com/ubi10/ubi-minimal@sha256:fb2f7f857cc60d88e3fad19da505083a682ca4569d7b55a61f64aaa43641f741
 
 LABEL maintainer="fatherlinux <scott.mccarty@crunchtools.com>"
 LABEL description="Josui - Claude Code packaged as a crunchtools autonomous agent"
