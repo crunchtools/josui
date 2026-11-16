@@ -10,6 +10,12 @@ All notable changes to this project are documented here. The format follows
 - claude-agent 1.0.1 (was 0.2.1), in step with the developer image: the
   Matrix bridge names itself, so Cloudflare no longer refuses it (error 1010).
 
+### Changed
+- claude-agent 1.1.0 (was 1.0.1), in step with the developer image: the
+  supervised session runs in tmux on a server of its own, so
+  `claude-agent attach` follows the attaching terminal's size. Run it from
+  outside tmux.
+
 ## [0.11.1] - 2026-11-11
 
 ### Changed
