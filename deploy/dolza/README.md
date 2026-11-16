@@ -27,6 +27,11 @@ live files are the ones that run; when one changes, update the copy here too.
   `~/Projects/dolza-services/vertexN/data/state/.claude` to exist and be owned by the host user
   before its first start. Otherwise podman creates that directory as root when
   it mounts the sessions directory inside it.
+- `dmax@.container`: Max worker N (`dmax@1` … `dmax@4`, named `Dolza N - Max`).
+  The same worker as Vertex, plus `JOSUI_RC=1`, which puts its conversation on
+  Remote Control too. Attach with `podman exec -it dmaxN tmux attach -t dev`. It needs
+  `~/Projects/dolza-services/dmaxN/data/state/.claude` to exist and be owned by the
+  host user before its first start, for the same reason as Vertex.
 
 Start the pod before its members. Starting a member with the pod down fails as
 a dependency.

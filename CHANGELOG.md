@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-16
+
 ### Removed
 - **BREAKING: `quay.io/crunchtools/josui` is no longer built.** Josui Prime and
   every seat (Dolza's Vertex and Max seats, Exedore's Max seats) run
@@ -29,6 +31,22 @@ All notable changes to this project are documented here. The format follows
 - README and `deploy/josui.env.example` describe the developer image's
   contract: the home is `/home/podman`, `JOSUI_MODE` is `server` or `worker`,
   and logging in uses `--entrypoint claude quay.io/crunchtools/developer:latest`.
+
+## [0.12.0] - 2026-11-14
+
+### Added
+- `JOSUI_MODE=interactive`: one interactive Claude Code with Remote Control
+  on, in tmux session `prime`, instead of the Remote Control server -- the
+  dispatcher Josui Prime, reached from the app, a terminal and by voice. tmux
+  from RHEL BaseOS (one RHSM register/install/unregister layer) and
+  podman-remote from UBI (#57).
+
+### Removed
+- The per-repo Trivy scan: published images are scanned on a schedule by the
+  fleet CVE check (constitution 1.40.0, RT #1551) (#54).
+
+### Changed
+- Inherits constitution v1.40.0, then v1.41.0 (#55, #56); python-sdlc 0.6.3.
 
 ## [0.11.1] - 2026-11-11
 
