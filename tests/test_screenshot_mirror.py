@@ -28,9 +28,16 @@ class ScreenshotMirrorTest(unittest.TestCase):
         (self.bin / "mountpoint").chmod(0o755)
 
     def once(self) -> subprocess.CompletedProcess[str]:
-        env = {**os.environ, "PATH": f"{self.bin}:{os.environ['PATH']}", "SCREENSHOT_SRC": str(self.src),
-               "SCREENSHOT_DST": str(self.dst), "SCREENSHOT_MOUNT": str(self.src)}
-        return subprocess.run(["bash", str(SCRIPT), "--once"], env=env, capture_output=True, text=True, check=False)
+        env = {
+            **os.environ,
+            "PATH": f"{self.bin}:{os.environ['PATH']}",
+            "SCREENSHOT_SRC": str(self.src),
+            "SCREENSHOT_DST": str(self.dst),
+            "SCREENSHOT_MOUNT": str(self.src),
+        }
+        return subprocess.run(
+            ["bash", str(SCRIPT), "--once"], env=env, capture_output=True, text=True, check=False
+        )
 
     def test_adds_and_deletes_are_mirrored_and_hidden_files_are_not(self) -> None:
         (self.src / "a.png").write_bytes(b"a")

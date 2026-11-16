@@ -1,15 +1,13 @@
-# Dependabot config for crunchtools container-only repos.
+# Dependabot config for crunchtools/josui (Host Tool profile).
 # See constitution.md Section XV.
 #
-# This repo ships a Containerfile and workflows, with no language-level
-# manifest, so the two things that go stale silently are the base image
-# pin and the `uses:` action pins. CLAUDE_CODE_VERSION in the Containerfile
-# is bumped by hand: a new Claude Code is tested before Josui runs on it. The
-# claude-agent packages come from crunchtools' repository at build time.
+# This repo builds no image (the runtime is quay.io/crunchtools/developer), so
+# what goes stale silently is the lockfile of the gates' own tools (uv) and the
+# `uses:` action pins.
 
 version: 2
 updates:
-  - package-ecosystem: "docker"
+  - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"

@@ -29,7 +29,10 @@ def user(text: str, **extra) -> dict:
 
 
 def answer(text: str, stop: str = "end_turn") -> dict:
-    return {"type": "assistant", "message": {"stop_reason": stop, "content": [{"type": "text", "text": text}]}}
+    return {
+        "type": "assistant",
+        "message": {"stop_reason": stop, "content": [{"type": "text", "text": text}]},
+    }
 
 
 class WatcherTest(unittest.TestCase):
