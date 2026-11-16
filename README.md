@@ -225,7 +225,7 @@ question answered once: `podman exec -it <service> claude-agent attach --rw`.
 | `JOSUI_MATRIX_ALLOW` | unset | Comma list of the exact Matrix IDs whose messages reach the session. Empty lets nothing through. |
 | `JOSUI_MAX_TOOL_CALLS`, `JOSUI_MAX_REPEAT` | `500`, `5` | Circuit breakers. |
 | `JOSUI_DEBUG_FILE` | audit dir + `/remote-control.log` | Remote Control's `--debug-file`, emptied at each start. Read it first when a session does not appear. |
-| `JOSUI_MODE` | `server` | `worker` runs one named interactive Claude Code in tmux session `dev` instead of the Remote Control server: Josui Prime and every seat run this way. `JOSUI_RC=1` turns Remote Control on for that conversation. |
+| `JOSUI_MODE` | `server` | `worker` runs one named interactive Claude Code instead of the Remote Control server. Without `JOSUI_MATRIX_HOMESERVER` it is in tmux session `dev` (the seats). With it, it is a supervised worker: `claude-agent run` holds the one conversation, which the Matrix bridge, Remote Control and `claude-agent send` all reach, with no `dev` session (Josui Prime). `JOSUI_RC=1` turns Remote Control on for that conversation. |
 | `JOSUI_TMUX` | unset | `1` starts a detached tmux session `dev` holding an interactive Claude Code beside the server. See [Attaching](#attaching). |
 | `JOSUI_SSH_DIR` | `/etc/josui/ssh` | Where the [fallback](#fallback-into-the-host)'s key, config and known_hosts are mounted. |
 | `JOSUI_CONFIG_DIR`, `JOSUI_SKILLS_DIR` | set in the image | Where the identity and skills mounts are read from. |
@@ -240,9 +240,12 @@ Remote Control is how the agent is reached from claude.ai and the phone. For a
 copy that is worked *in* there is a terminal:
 
 ```bash
-podman exec -it <service> tmux attach -t dev     # JOSUI_MODE=worker or JOSUI_TMUX=1
-podman exec -it <service> claude-agent attach    # the supervised session, read-only
+podman exec -it <service> tmux attach -t dev          # a seat: JOSUI_MODE=worker, or JOSUI_TMUX=1
+podman exec -it <service> claude-agent attach --rw    # a supervised worker (Josui Prime); read-only without --rw
 ```
+
+A supervised worker has no `dev` session: claude-agent holds its one
+conversation in tmux on a server of its own (`tmux -L claude-agent`).
 
 Both follow the attaching terminal's size and survive the disconnect:
 claude-agent holds its session in tmux on a server of its own, so run its

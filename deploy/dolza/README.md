@@ -13,8 +13,10 @@ live files are the ones that run; when one changes, update the copy here too.
     into every member at the same paths, along with `/etc/machine-id`.
   - The pod's `ExecStartPre` clears both directories, because pids start again
     from 1 when the pod does.
-- `josui.container`: Josui Prime with `JOSUI_MODE=interactive`. Attach with
-  `podman exec -it josui tmux attach -t prime`. SELinux labels stay on: its
+- `josui.container`: Josui Prime, a supervised worker (`JOSUI_MODE=worker`
+  with `JOSUI_MATRIX_HOMESERVER`): `claude-agent run` holds its one
+  conversation, reached by text, Remote Control and voice. Attach with
+  `podman exec -it josui claude-agent attach --rw` from outside tmux. SELinux labels stay on: its
   own mounts are private (`:Z`), and the two shared directories carry the
   shared label (`:z`). Measured 2026-11-14: Prime, confined as `container_t`,
   and the label-disabled Vertex workers connect to each other's sockets in both

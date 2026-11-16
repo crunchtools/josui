@@ -12,10 +12,10 @@ All notable changes to this project are documented here. The format follows
   `quay.io/crunchtools/developer:latest`, so this repo stops being an image
   source. The Containerfile, the container workflow, `josui-entrypoint` and
   its tests, and the image boot gate are gone. The published tags stay in the
-  registry and no longer move: `:latest` stays at 0.11.1. A unit still
+  registry and no longer move: `:latest` stays at 0.12.0. A unit still
   pulling it should move to developer:latest, with the state volume at
   `/home/podman` instead of `/home/josui`. `deploy/dolza/josui.container` is
-  the reference. The two claude-agent pins merged since 0.11.1 (1.0.1, then
+  the reference. The two claude-agent pins merged since 0.12.0 (1.0.1, then
   1.1.0) reached only `:main`, never a josui release; developer carries
   claude-agent 1.1.0.
 - `deploy/josui.service.example`. It described the retired image's contract.
