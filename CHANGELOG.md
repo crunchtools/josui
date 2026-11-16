@@ -6,15 +6,29 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Fixed
-- claude-agent 1.0.1 (was 0.2.1), in step with the developer image: the
-  Matrix bridge names itself, so Cloudflare no longer refuses it (error 1010).
+### Removed
+- **BREAKING: `quay.io/crunchtools/josui` is no longer built.** Josui Prime and
+  every seat (Dolza's Vertex and Max seats, Exedore's Max seats) run
+  `quay.io/crunchtools/developer:latest`, so this repo stops being an image
+  source. The Containerfile, the container workflow, `josui-entrypoint` and
+  its tests, and the image boot gate are gone. The published tags stay in the
+  registry and no longer move: `:latest` stays at 0.11.1. A unit still
+  pulling it should move to developer:latest, with the state volume at
+  `/home/podman` instead of `/home/josui`. `deploy/dolza/josui.container` is
+  the reference. The two claude-agent pins merged since 0.11.1 (1.0.1, then
+  1.1.0) reached only `:main`, never a josui release; developer carries
+  claude-agent 1.1.0.
+- `deploy/josui.service.example`. It described the retired image's contract.
+  The maintained deployment is `deploy/dolza/josui.container`.
 
 ### Changed
-- claude-agent 1.1.0 (was 1.0.1), in step with the developer image: the
-  supervised session runs in tmux on a server of its own, so
-  `claude-agent attach` follows the attaching terminal's size. Run it from
-  outside tmux.
+- The constitution (3.0.0) judges this repo as a Host Tool, not an Autonomous
+  Agent: what it ships is host tools and deploy copies. The runtime image's
+  requirements are crunchtools/developer's. Dependabot watches `uv` in place of
+  the base image.
+- README and `deploy/josui.env.example` describe the developer image's
+  contract: the home is `/home/podman`, `JOSUI_MODE` is `server` or `worker`,
+  and logging in uses `--entrypoint claude quay.io/crunchtools/developer:latest`.
 
 ## [0.11.1] - 2026-11-11
 

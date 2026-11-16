@@ -1,19 +1,24 @@
 # josui Constitution
 
-> **Version:** 2.2.0
+> **Version:** 3.0.0
 > **Ratified:** 2026-10-11
 > **Status:** Active
-> **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.41.0
-> **Profile:** Autonomous Agent
+> **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.42.0
+> **Profile:** Host Tool
 
-Claude Code packaged as a container, run as Josui: the agent its operator
-works with over Remote Control. One instance runs on a server; copies of the
-same image run elsewhere with different mounts.
+Josui: Claude Code run as the agent its operator works with over Remote
+Control. This repo holds Josui's deployment (copies of the live quadlets in
+`deploy/`), the host tools beside it (`tools/`) and this constitution. It
+builds no image. Josui runs `quay.io/crunchtools/developer`, which
+[crunchtools/developer](https://github.com/crunchtools/developer) builds and
+governs under the Autonomous Agent profile.
 
-This file holds what is specific to this deployment. The fleet rules and the
-Autonomous Agent profile (the six layers' requirements, quality gates,
-naming) apply at the inherited version and are checked against this repo's
-files by `constitution.yml`. They are not restated here.
+This file holds what is specific to this deployment. The repo is judged as a
+Host Tool: what it ships is host-side tools and deploy copies, never an image.
+The fleet rules and that profile apply at the inherited version and are
+checked against this repo's files by `constitution.yml`. The six layers below
+are Josui's own facts at run time, kept here because they are about this
+deployment; the image's requirements are developer's.
 
 ## Trust Boundary
 
@@ -52,26 +57,18 @@ whatever was there.
 
 ## Layer 3 — Container & Supply Chain Security
 
-- **Image:** `quay.io/crunchtools/josui` (Quay.io is the only registry),
-  public. It holds tooling only; identity and credentials are mounted.
-- **Base:** UBI 10 Minimal, pinned by digest. Claude Code
-  (`CLAUDE_CODE_VERSION`) comes from Anthropic's signed repository, pinned in
-  the Containerfile and bumped by hand; the claude-agent packages come from
-  crunchtools' signed repository, because a new Claude Code is tried before
-  Josui runs on it. `DISABLE_AUTOUPDATER=1`. Telemetry and error reporting are off
-  (`DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING`); the broader
-  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is not set, because it also
-  turns off the feature-flag fetch Remote Control refuses to start without.
-- **Vulnerability scanning:** none at build time; published images are scanned on a schedule by the fleet CVE check (grype + Nagios), which pages on a new fixable Critical (constitution 1.40.0, RT #1551). SBOM (SPDX)
-  per build. cosign signing is not wired yet.
+- **Image:** the runtime image is `quay.io/crunchtools/developer`, built,
+  pinned, scanned and released by crunchtools/developer under its own
+  constitution. Its base, the Claude Code and claude-agent pins, the
+  vulnerability scan and the rebuild trigger are recorded there and not
+  restated here. This repo built `quay.io/crunchtools/josui` until 1.0.0. That
+  image is no longer built; its published tags stay and no longer move.
 - **Liveness:** there is none to monitor from inside. Remote Control polls
   rather than holding a connection, and its debug file is quiet while idle, so
   neither sockets nor file mtimes say whether the bridge is alive. A session
   that does not appear is diagnosed from the `--debug-file`, not inferred.
   A watchdog built on socket sampling was shipped in 0.6.0 and removed in
   0.7.0 (RT#1556); do not reintroduce one without a signal that was measured.
-- **No `schedule:` trigger:** rebuilt on `parent-image-updated`, the fleet's
-  weekly pulse.
 - **Runtime:** UID 1000, `--read-only`, `--tmpfs /tmp`, `--cap-drop=ALL`,
   `no-new-privileges`, SELinux labels on every mount, an internal network
   with `--dns=none`.
@@ -80,12 +77,12 @@ whatever was there.
   run as root, and two owners in one git checkout break it for both. The
   process holds no capabilities on either side of the mapping.
 
-### The development image
+### The images this repo built
 
-Built here until 2026-11-06 as `Containerfile.dev`, now
-[crunchtools/developer](https://github.com/crunchtools/developer) with its own
-constitution. It is a different agent: its own Trentina profile, its own
-identity, no production data, and deviations this image does not take.
+`Containerfile.dev` moved to crunchtools/developer on 2026-11-06, and
+`Containerfile` (`quay.io/crunchtools/josui`) was retired in 1.0.0, once Josui
+Prime and every seat ran developer:latest. Josui is not a developer seat: it
+has its own Trentina profile, identity and reach. Only its image is shared.
 
 ## Layer 4 — Runtime Security & Behavioral Controls
 
@@ -240,6 +237,18 @@ the host's monitoring configuration.
 | Host directory | `/srv/<service>/` on a server; `~/Projects/<host>-services/<service>/` on a user's machine such as Dolza (crunchtools constitution, unreleased after 1.42.0). Either way: `config/` identity, `config/ssh` the client config and known_hosts, and env, `data/state`, `data/audit`, `data/josui-skills` |
 | Interface | Claude Code Remote Control, and root over ssh on the agent's own bridge |
 
+## Hosts
+
+The host tools run from a checkout on the hosts that use them. `tools/seat-ssh`
+runs on Dolza, where the seats live. `tools/voice` and
+`tools/screenshot-mirror` run on the operator's machine. `deploy/dolza/` is a
+copy of the live quadlets on Dolza (see its README).
+
+Deviation from the Host Tool profile: there is no `install.sh` and no
+`systemd/` directory. Each tool says how it is installed in its README or header comment, and the one
+user unit, `tools/voice/josui-speak.service`, ships beside its tool. The
+quadlets are copies kept for review, not installed from here.
+
 ## History
 
 | Version | Date | Changes |
@@ -256,3 +265,4 @@ the host's monitoring configuration.
 | 2.0.0 | 2026-11-07 | Root on gloval over ssh, replacing the `josui-rescue` forced command. MAJOR because it retires 1.6.0's principle that unmediated authority is sized to the emergency: RT#1568's mediated write path does not work (upstream's gatekeeper cannot reach any provider from inside its own process), so the unmediated path is sized to the agent instead. Pinned to `from=10.89.13.10`; no forced command means no per-command record. Operator's decision. RT#1568 |
 | 2.1.0 | 2026-11-11 | The blocking Trivy gate and `.trivyignore` are retired with the fleet's per-build scan (constitution 1.40.0): published images are scanned on a schedule by the fleet CVE check (RT #1551) |
 | 2.2.0 | 2026-11-14 | Host directory on a user's machine is `~/Projects/<host>-services/<service>/` (Dolza), backed up with ~/Projects |
+| 3.0.0 | 2026-11-16 | The josui image is retired: no Containerfile and no container workflow, and the runtime image is quay.io/crunchtools/developer, governed there. The profile is Host Tool, because what is left is host tools and deploy copies; inherits v1.42.0, the first release with that profile. MAJOR because the published image goes away. Josui Prime a48 |

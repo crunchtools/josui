@@ -1,8 +1,12 @@
 # josui
 
-Claude Code packaged as a crunchtools autonomous agent. The image is tooling
-only; who the agent is and what it may touch are mounted in at run time, so
-one image serves a long-running instance on a server and any copy run elsewhere.
+Josui, Claude Code run as a crunchtools autonomous agent: its deployment (the
+quadlets in `deploy/`), the host tools beside it (`tools/`) and its
+constitution. This repo builds no image. Josui and every seat run
+[`quay.io/crunchtools/developer`](https://github.com/crunchtools/developer),
+whose image is tooling only; who the agent is and what it may touch are
+mounted in at run time. Until 1.0.0 this repo built `quay.io/crunchtools/josui`;
+that image is no longer built.
 
 The operator reaches it over [Remote Control](https://code.claude.com/docs/en/remote-control)
 from claude.ai/code or the phone app. Nothing listens for inbound connections —
@@ -12,8 +16,8 @@ the only ssh in the image is a client, for the [fallback](#fallback-into-the-hos
 
 | Mount | Container path | What it is |
 |-------|----------------|------------|
-| state | `/home/josui` | Claude login, sessions, git identity. The only writable home. |
-| ssh | `/etc/josui/ssh` (read-only) | A private key, `config` and `known_hosts` for the [fallback](#fallback-into-the-host). Absent on a copy run elsewhere, and then there is no fallback. |
+| state | `/home/podman` | Claude login, sessions, git identity. The only writable home. |
+| ssh | `JOSUI_SSH_DIR`, default `/etc/josui/ssh` (read-only) | A private key, `config` and `known_hosts` for the [fallback](#fallback-into-the-host). Absent on a copy run elsewhere, and then there is no fallback. |
 | identity | `/etc/josui` (read-only) | `CLAUDE.md`, `settings.json`. Private; kept in the host's config repo. Hooks here are ignored: only the image's managed hooks run. |
 | skills | `/var/lib/josui/josui-skills` | A git checkout of the skills repo, pulled at start. |
 | audit | `/var/log/josui` | One JSON line per tool call. |
@@ -52,10 +56,11 @@ through is the thing that is down. That is the gap this fills, and it is a
 measured failure, not a hypothetical: a gateway restart leaves every client's
 MCP session dead while the agent looks healthy from every other angle.
 
-Mount a key, an ssh `config` and a `known_hosts` at `/etc/josui/ssh` and the
-entrypoint copies them into `~/.ssh` at mode 0600 — copied rather than pointed
-at, because ssh refuses a private key that anyone else can read and the mode on
-a bind mount is whichever one the host set. There is **no sshd in this image**;
+Mount a key, an ssh `config` and a `known_hosts` at `JOSUI_SSH_DIR` (default
+`/etc/josui/ssh`) and the entrypoint copies them to a tmpfs at mode 0600 and
+links `~/.ssh` there — copied rather than pointed at, because ssh refuses a
+private key that anyone else can read and the mode on a bind mount is whichever
+one the host set; and to tmpfs, so no key is written to the home volume. There is **no sshd in this image**;
 this is outbound only.
 
 The image supplies the mechanism and nothing else. Which host, which account
@@ -67,9 +72,9 @@ Host gloval
   HostName 10.89.13.1          # the host's address on the agent's own bridge
   Port 22422
   User <the account the key authorizes>
-  IdentityFile /home/josui/.ssh/id_ed25519
+  IdentityFile ~/.ssh/id_ed25519
   StrictHostKeyChecking yes
-  UserKnownHostsFile /home/josui/.ssh/known_hosts
+  UserKnownHostsFile ~/.ssh/known_hosts
 ```
 
 An internal network does not route to the host by default, and a host firewall
@@ -146,8 +151,9 @@ and [Matrix](https://github.com/crunchtools/claude-agent/blob/main/docs/matrix.m
 
 ## Run it
 
-`deploy/josui.service.example` and `deploy/josui.env.example` show a server
-deployment; the real unit and env file live in the host's private config repo.
+`deploy/dolza/josui.container` is the deployment, a copy of the live quadlet,
+and `deploy/josui.env.example` is the env file it reads, with placeholder
+values. The real env file lives on srv-secrets.
 First start needs one thing done by hand, once, because the login is personal
 and Remote Control refuses long-lived tokens.
 
@@ -165,15 +171,14 @@ second from start to exit. Log in from a one-off container on the same state
 volume instead, with the unit stopped:
 
 ```bash
-systemctl stop <service>
+systemctl --user stop <service>
 podman run --rm -it \
-  --uidmap 0:100000:1000 --uidmap 1000:0:1 --uidmap 1001:101001:64535 \
-  --gidmap 0:100000:1000 --gidmap 1000:0:1 --gidmap 1001:101001:64535 \
-  --network <the unit's network> --dns=none \
+  <the unit's user namespace options, if it sets any> \
+  --network <the unit's network or pod> \
   --env-file <the unit's env file> \
-  -v <the state volume>:/home/josui:Z \
-  --entrypoint claude quay.io/crunchtools/josui:latest auth login
-systemctl start <service>
+  -v <the state volume>:/home/podman:Z \
+  --entrypoint claude quay.io/crunchtools/developer:latest auth login
+systemctl --user start <service>
 ```
 
 Both details matter. The user mapping has to be the unit's, or the login is
@@ -191,7 +196,7 @@ reports EOF:
 install -m 755 /dev/stdin /tmp/login.sh <<'SH'
 #!/bin/bash
 exec podman run --rm -it <the options above> \
-  --entrypoint claude quay.io/crunchtools/josui:latest auth login
+  --entrypoint claude quay.io/crunchtools/developer:latest auth login
 SH
 
 mkfifo /tmp/login.fifo
@@ -220,20 +225,22 @@ question answered once: `podman exec -it <service> claude-agent attach --rw`.
 | `JOSUI_MATRIX_ALLOW` | unset | Comma list of the exact Matrix IDs whose messages reach the session. Empty lets nothing through. |
 | `JOSUI_MAX_TOOL_CALLS`, `JOSUI_MAX_REPEAT` | `500`, `5` | Circuit breakers. |
 | `JOSUI_DEBUG_FILE` | audit dir + `/remote-control.log` | Remote Control's `--debug-file`, emptied at each start. Read it first when a session does not appear. |
-| `JOSUI_MODE` | `server` | `interactive` runs one interactive Claude Code with Remote Control on, named `JOSUI_NAME`, in tmux session `prime` instead of the Remote Control server: the dispatcher Josui Prime, reached from the app, `podman exec -it <service> tmux attach -t prime`, or text sent with `tmux send-keys`. Onboarding, the Remote Control dialog and trust in `JOSUI_WORKDIR` are recorded as answered. |
-| `JOSUI_TMUX` | unset | `1` starts a detached tmux session `dev` holding an interactive Claude Code. See [Attaching](#attaching). |
-| `JOSUI_AUDIT_RETENTION_DAYS` | `120` | Age at which an audit file is deleted at start. |
-| `JOSUI_AUDIT_DIR` | set in the image | Where audit files are written; mount a volume there. |
-| `JOSUI_BREAKER_DIR` | set in the image | Per-conversation breaker state, on the tmpfs. |
+| `JOSUI_MODE` | `server` | `worker` runs one named interactive Claude Code in tmux session `dev` instead of the Remote Control server: Josui Prime and every seat run this way. `JOSUI_RC=1` turns Remote Control on for that conversation. |
+| `JOSUI_TMUX` | unset | `1` starts a detached tmux session `dev` holding an interactive Claude Code beside the server. See [Attaching](#attaching). |
+| `JOSUI_SSH_DIR` | `/etc/josui/ssh` | Where the [fallback](#fallback-into-the-host)'s key, config and known_hosts are mounted. |
 | `JOSUI_CONFIG_DIR`, `JOSUI_SKILLS_DIR` | set in the image | Where the identity and skills mounts are read from. |
+
+The developer image's entrypoint reads these. Its
+[`developer-entrypoint`](https://github.com/crunchtools/developer/blob/main/rootfs/usr/local/bin/developer-entrypoint)
+is the authority when this table and it disagree.
 
 ## Attaching
 
 Remote Control is how the agent is reached from claude.ai and the phone. For a
-copy that is worked *in* -- the `developer` image below -- there is a terminal:
+copy that is worked *in* there is a terminal:
 
 ```bash
-podman exec -it <service> tmux attach -t dev     # JOSUI_TMUX=1
+podman exec -it <service> tmux attach -t dev     # JOSUI_MODE=worker or JOSUI_TMUX=1
 podman exec -it <service> claude-agent attach    # the supervised session, read-only
 ```
 
@@ -279,14 +286,15 @@ debug file does not grow while idle either. There is no cheap local signal for
 "the bridge is alive", and the one failure actually observed was not a
 connectivity failure at all.
 
-## developer
+## The image
 
-The development agent image that used to be built here as `Containerfile.dev`
-now lives in its own repository,
-[crunchtools/developer](https://github.com/crunchtools/developer), and still
-publishes as `quay.io/crunchtools/developer`. It began from this image's
-entrypoint and mount contract and is expected to diverge from them; a repo
-called josui was the wrong home for an agent that is deliberately not one.
+This repo built two images and builds none now. The development image, once
+`Containerfile.dev` here, moved to
+[crunchtools/developer](https://github.com/crunchtools/developer) on
+2026-11-06. Josui's own `quay.io/crunchtools/josui` was retired in 1.0.0, once
+Josui Prime and every seat ran `quay.io/crunchtools/developer:latest`. Its
+published tags stay where they are and no longer move. A new Claude Code or
+claude-agent reaches Josui through the developer image.
 
 ## Development
 
@@ -294,7 +302,7 @@ called josui was the wrong home for an agent that is deliberately not one.
 python3 -m unittest discover -s tests -v
 ```
 
-The image is built by GitHub Actions only.
+The tests cover the host tools in `tools/`.
 
 ## License
 

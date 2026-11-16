@@ -22,7 +22,19 @@ class SeatSshTest(unittest.TestCase):
         self.keys = {}
         for seat in ("dmax1", "dmax2"):
             subprocess.run(
-                ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", f"dolza-{seat}", "-f", str(root / seat)], check=True
+                [
+                    "ssh-keygen",
+                    "-q",
+                    "-t",
+                    "ed25519",
+                    "-N",
+                    "",
+                    "-C",
+                    f"dolza-{seat}",
+                    "-f",
+                    str(root / seat),
+                ],
+                check=True,
             )
             self.keys[seat] = (root / f"{seat}.pub").read_text().split()[1]
             (root / f"{seat}.pub").rename(self.pubkeys / f"{seat}.pub")
@@ -35,18 +47,21 @@ class SeatSshTest(unittest.TestCase):
 
     def run_tool(self, *args: str, hosts: str | None = None) -> subprocess.CompletedProcess[str]:
         env = {**os.environ, "SEAT_SSH_PUBKEYS": str(self.pubkeys), "SEAT_SSH_HOSTS": hosts or self.hosts}
-        return subprocess.run(["bash", str(SCRIPT), *args], env=env, capture_output=True, text=True, check=False)
+        return subprocess.run(
+            ["bash", str(SCRIPT), *args], env=env, capture_output=True, text=True, check=False
+        )
 
     def test_grant_writes_one_restricted_tagged_line_per_seat_everywhere(self) -> None:
         result = self.run_tool("grant")
         self.assertEqual(result.returncode, 0, result.stderr)
         for path in (self.local, self.remote):
             lines = [line for line in path.read_text().splitlines() if "dolza-" in line]
+            options = 'from="10.44.0.20",no-agent-forwarding,no-X11-forwarding'
             self.assertEqual(
                 lines,
                 [
-                    f'from="10.44.0.20",no-agent-forwarding,no-X11-forwarding ssh-ed25519 {self.keys["dmax1"]} dolza-dmax1',
-                    f'from="10.44.0.20",no-agent-forwarding,no-X11-forwarding ssh-ed25519 {self.keys["dmax2"]} dolza-dmax2',
+                    f"{options} ssh-ed25519 {self.keys['dmax1']} dolza-dmax1",
+                    f"{options} ssh-ed25519 {self.keys['dmax2']} dolza-dmax2",
                 ],
             )
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
@@ -86,17 +101,30 @@ class SeatSshTest(unittest.TestCase):
         env_hosts = self.hosts
         result = subprocess.run(
             ["bash", str(SCRIPT), "grant"],
-            env={**os.environ, "SEAT_SSH_PUBKEYS": str(self.pubkeys), "SEAT_SSH_HOSTS": env_hosts,
-                 "SEAT_SSH_FROM": '10.44.0.20",command="sh'},
-            capture_output=True, text=True, check=False,
+            env={
+                **os.environ,
+                "SEAT_SSH_PUBKEYS": str(self.pubkeys),
+                "SEAT_SSH_HOSTS": env_hosts,
+                "SEAT_SSH_FROM": '10.44.0.20",command="sh',
+            },
+            capture_output=True,
+            text=True,
+            check=False,
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("not an IPv4 address", result.stderr)
         self.assertFalse(self.local.exists())
 
     def run_from(self, value: str) -> subprocess.CompletedProcess[str]:
-        env = {**os.environ, "SEAT_SSH_PUBKEYS": str(self.pubkeys), "SEAT_SSH_HOSTS": self.hosts, "SEAT_SSH_FROM": value}
-        return subprocess.run(["bash", str(SCRIPT), "grant"], env=env, capture_output=True, text=True, check=False)
+        env = {
+            **os.environ,
+            "SEAT_SSH_PUBKEYS": str(self.pubkeys),
+            "SEAT_SSH_HOSTS": self.hosts,
+            "SEAT_SSH_FROM": value,
+        }
+        return subprocess.run(
+            ["bash", str(SCRIPT), "grant"], env=env, capture_output=True, text=True, check=False
+        )
 
     def test_address_bounds(self) -> None:
         for bad in ("256.0.0.1", "10.44.0.300", "10.44.0.0/33", "10.44.0", "10.44.0.20/"):
@@ -124,16 +152,22 @@ class SeatSshTest(unittest.TestCase):
         fake.mkdir()
         (fake / "grep").write_text("#!/bin/sh\nexit 2\n")
         (fake / "grep").chmod(0o755)
-        env = {**os.environ, "PATH": f"{fake}:{os.environ['PATH']}",
-               "SEAT_SSH_PUBKEYS": str(self.pubkeys), "SEAT_SSH_HOSTS": f"remote|bash -c|{self.remote}"}
-        result = subprocess.run(["bash", str(SCRIPT), "grant"], env=env, capture_output=True, text=True, check=False)
+        env = {
+            **os.environ,
+            "PATH": f"{fake}:{os.environ['PATH']}",
+            "SEAT_SSH_PUBKEYS": str(self.pubkeys),
+            "SEAT_SSH_HOSTS": f"remote|bash -c|{self.remote}",
+        }
+        result = subprocess.run(
+            ["bash", str(SCRIPT), "grant"], env=env, capture_output=True, text=True, check=False
+        )
         self.assertIn("remote: unreachable or failed", result.stdout)
         self.assertEqual(self.remote.read_text(), "ssh-ed25519 SCOTT scott@breetai\n")
         self.assertEqual([p.name for p in self.remote.parent.iterdir()], ["authorized_keys"])
 
     def test_a_public_key_that_is_not_base64_is_refused(self) -> None:
-        (self.pubkeys / "dmax1.pub").write_text('ssh-ed25519 AAAA\nevil dolza-dmax1\n')
-        (self.pubkeys / "dmax1.pub").write_text('ssh-ed25519 AA,AA dolza-dmax1\n')
+        (self.pubkeys / "dmax1.pub").write_text("ssh-ed25519 AAAA\nevil dolza-dmax1\n")
+        (self.pubkeys / "dmax1.pub").write_text("ssh-ed25519 AA,AA dolza-dmax1\n")
         result = self.run_tool("grant", "dmax1")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("not base64", result.stderr)
@@ -154,7 +188,6 @@ class SeatSshTest(unittest.TestCase):
         self.assertIn("not a seat name", result.stderr)
 
 
-
 SEAT = Path(__file__).resolve().parent.parent / "tools/seat-ssh/seat"
 
 
@@ -170,10 +203,16 @@ class SeatAttachTest(unittest.TestCase):
     def attach(self, link: str, *args: str) -> subprocess.CompletedProcess[str]:
         (self.bin / link).symlink_to(SEAT)
         env = {**os.environ, "PATH": f"{self.bin}:{os.environ['PATH']}"}
-        return subprocess.run([str(self.bin / link), *args], env=env, capture_output=True, text=True, check=False)
+        return subprocess.run(
+            [str(self.bin / link), *args], env=env, capture_output=True, text=True, check=False
+        )
 
     def test_each_kind_of_seat_reaches_its_container(self) -> None:
-        style = "tmux -u set -g status-style bg=default,fg=colour244 ; set -g mouse off ; set -g window-status-current-style fg=colour250,bold ; set -g terminal-overrides ,*:Tc ; attach -t dev:0"
+        style = (
+            "tmux -u set -g status-style bg=default,fg=colour244 ; set -g mouse off ; "
+            "set -g window-status-current-style fg=colour250,bold ; "
+            "set -g terminal-overrides ,*:Tc ; attach -t dev:0"
+        )
         self.assertEqual(self.attach("v2").stdout.strip(), f"podman exec -it vertex2 {style}")
         self.assertEqual(self.attach("m4").stdout.strip(), f"podman exec -it dmax4 {style}")
         self.assertEqual(self.attach("prime").stdout.strip(), f"podman exec -it josui {style}")
@@ -196,7 +235,12 @@ class SeatAttachTest(unittest.TestCase):
 
     def test_every_kind_of_seat_gets_its_session_name(self) -> None:
         env = {**os.environ, "PATH": f"{self.bin}:{os.environ['PATH']}"}
-        for link, title in (("v3", "Dolza 3 - Vertex"), ("m2", "Dolza 2 - Max"), ("x4", "Exedore 4 - Max"), ("prime", "Josui Prime")):
+        for link, title in (
+            ("v3", "Dolza 3 - Vertex"),
+            ("m2", "Dolza 2 - Max"),
+            ("x4", "Exedore 4 - Max"),
+            ("prime", "Josui Prime"),
+        ):
             with self.subTest(link=link):
                 (self.bin / link).symlink_to(SEAT)
                 primary, secondary = pty.openpty()
