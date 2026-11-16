@@ -237,9 +237,9 @@ podman exec -it <service> tmux attach -t dev     # JOSUI_TMUX=1
 podman exec -it <service> claude-agent attach    # the supervised session, read-only
 ```
 
-tmux follows the attaching terminal's size and survives the disconnect;
-`claude-agent attach` renders the supervised session at the size its
-supervisor set. The tmux session is deliberately not watched: quitting your
+Both follow the attaching terminal's size and survive the disconnect:
+claude-agent holds its session in tmux on a server of its own, so run its
+attach from outside tmux, not from inside `dev`. The tmux session is deliberately not watched: quitting your
 own shell must not end the container. Quitting Claude Code in window 0 leaves
 the pane for `prefix + :respawn-pane`.
 
