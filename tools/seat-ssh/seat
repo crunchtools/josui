@@ -18,14 +18,14 @@ window=0
 # (developer 1.11.0+) Claude Code is session claude-agent on socket
 # claude-agent, with no shell window; the old image has session dev.
 inner='w=$1
-if tmux -L claude-agent has-session -t claude-agent 2>/dev/null; then
+if tmux -L claude-agent has-session -t =claude-agent 2>/dev/null; then
   if [ "$w" = 1 ]; then
     echo "seat: no shell window under claude-agent; attach without shell" >&2
     exit 2
   fi
-  set -- -L claude-agent; target=claude-agent:0
+  set -- -L claude-agent; target="=claude-agent:0"
 else
-  set --; target="dev:$w"
+  set --; target="=dev:$w"
 fi
 exec tmux -u "$@" set -g status-style "bg=default,fg=colour244" \; \
   set -g mouse off \; \
@@ -45,6 +45,7 @@ esac
 case "$name" in
   v[1-4])  exec podman exec -it "vertex${name#v}" "${tmux_cmd[@]}" ;;
   m[1-4])  exec podman exec -it "dmax${name#m}" "${tmux_cmd[@]}" ;;
+  # @Q writes $'...' words, so exedore's login shell must be bash, zsh or ksh (it is).
   x[1-4])  exec ssh -t exedore podman exec -it "max${name#x}" "${tmux_cmd[@]@Q}" ;;
   prime)   exec podman exec -it josui "${tmux_cmd[@]}" ;;
   *) printf '%s\n' "seat: link this script as v1..v4, m1..m4, x1..x4 or prime" \

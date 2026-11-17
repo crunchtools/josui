@@ -7,6 +7,8 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- `seat` names its tmux targets exactly (`=claude-agent`, `=dev:N`), since
+  `-t` otherwise matches a session whose name only starts with them.
 - `seat` attaches to containers running under claude-agent (developer
   1.11.0+): it picks the target inside the container, `-L claude-agent`
   session `claude-agent:0` when that session exists and `dev:0` otherwise, so
