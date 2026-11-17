@@ -84,6 +84,7 @@ while kill -0 "$pid" 2>/dev/null; do
   fi
 done
 wait "$pid"
-log "bindfs exited ($?); binding again"
+status=$?
+log "bindfs exited ($status); binding again"
 unmount
 exit 1

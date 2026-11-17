@@ -27,9 +27,19 @@ class PcloudSeatsTest(unittest.TestCase):
         # mountpoint(1) stands in for pCloud's FUSE mount; bindfs runs until
         # killed; every tool records how it was called.
         self.fake("mountpoint", f'[ -e "{self.mounted_flag}" ]')
-        self.fake("bindfs", "exec sleep 30")
+        self.bindfs_pid = root / "bindfs.pid"
+        self.fake("bindfs", f'echo $$ > "{self.bindfs_pid}"; exec sleep 30')
         self.fake("fusermount3", "exit 0")
         self.fake("findmnt", "exit 0")
+        # stat -c %d reads pCloud's device number from a file; anything else is real stat.
+        self.device = root / "device"
+        self.device.write_text("41\n")
+        real_stat = subprocess.run(
+            ["sh", "-c", "command -v stat"], capture_output=True, text=True, check=True
+        )
+        self.fake(
+            "stat", f'[ "$1 $2" = "-c %d" ] && exec cat "{self.device}"\nexec {real_stat.stdout.strip()} "$@"'
+        )
         self.fake("chcon", "exit 0")
 
     def fake(self, name: str, body: str) -> None:
@@ -105,9 +115,9 @@ class PcloudSeatsTest(unittest.TestCase):
         )
         self.assertTrue((self.seats / "pCloudDrive/Downloads").is_dir())
 
-    def test_pcloud_going_away_ends_the_bind_so_it_is_bound_again(self) -> None:
+    def start_bound(self, folder: str = "Downloads") -> subprocess.Popen[str]:
         proc = subprocess.Popen(
-            ["bash", str(SCRIPT), "Downloads"], env=self.env(), stderr=subprocess.PIPE, text=True
+            ["bash", str(SCRIPT), folder], env=self.env(), stderr=subprocess.PIPE, text=True
         )
         self.addCleanup(proc.kill)
         deadline = time.monotonic() + 10
@@ -115,15 +125,55 @@ class PcloudSeatsTest(unittest.TestCase):
             time.sleep(0.05)
         self.assertEqual(
             self.called("bindfs"),
-            [f"bindfs -f -r --perms=og-rwx -o allow_other {self.drive}/Downloads {self.seats}/pCloudDrive/Downloads"],
+            [
+                "bindfs -f -r --perms=og-rwx -o allow_other "
+                f"{self.drive}/{folder} {self.seats}/pCloudDrive/{folder}"
+            ],
         )
-        self.mounted_flag.unlink()  # pCloud quits under the running bindfs
+        return proc
+
+    def assert_rebinds(self, proc: subprocess.Popen[str]) -> None:
         _, stderr = proc.communicate(timeout=10)
         self.assertEqual(proc.returncode, 1, "a non-zero exit is what makes Restart= bind again")
         self.assertIn("went away or changed", stderr)
         self.assertEqual(
             len(self.called("fusermount3")), 2, "a stale mount is cleared before binding and after"
         )
+
+    def test_both_folders_bind_and_stop_at_their_host_paths(self) -> None:
+        (self.drive / "Autosync/Screenshots").mkdir(parents=True)
+        (self.drive / "Autosync/Screenshots/s.png").write_bytes(b"png")
+        for folder in ("Downloads", "Autosync/Screenshots"):
+            with self.subTest(folder=folder):
+                self.calls.unlink(missing_ok=True)
+                proc = self.start_bound(folder)
+                proc.terminate()
+                proc.communicate(timeout=10)
+                self.calls.unlink()
+                self.assertEqual(self.run_script("--stop", folder).returncode, 0)
+                self.assertEqual(
+                    self.called("fusermount3"), [f"fusermount3 -uz {self.seats}/pCloudDrive/{folder}"]
+                )
+
+    def test_pcloud_going_away_ends_the_bind_so_it_is_bound_again(self) -> None:
+        proc = self.start_bound()
+        self.mounted_flag.unlink()  # pCloud quits under the running bindfs
+        self.assert_rebinds(proc)
+
+    def test_pcloud_restarting_ends_the_bind_so_it_is_bound_again(self) -> None:
+        proc = self.start_bound()
+        self.device.write_text("42\n")  # still mounted, but a new FUSE mount
+        self.assert_rebinds(proc)
+
+    def test_stopping_the_unit_ends_bindfs_and_unmounts(self) -> None:
+        proc = self.start_bound()
+        proc.terminate()
+        proc.communicate(timeout=10)
+        self.assertEqual(proc.returncode, 0)
+        self.assertEqual(len(self.called("fusermount3")), 2)
+        pid = int(self.bindfs_pid.read_text())
+        with self.assertRaises(ProcessLookupError, msg="bindfs must not outlive the script"):
+            os.kill(pid, 0)
 
     def test_bindfs_dying_ends_the_unit_so_it_is_bound_again(self) -> None:
         self.fake("bindfs", "exit 3")
