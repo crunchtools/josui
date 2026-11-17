@@ -1,4 +1,4 @@
-"""tools/pcloud-seats: two folders only, never an unmounted or empty pCloud, rebinds when pCloud changes."""
+"""tools/pcloud-seats: two folders only, never an unmounted pCloud, rebinds when pCloud changes."""
 
 from __future__ import annotations
 
@@ -99,11 +99,20 @@ class PcloudSeatsTest(unittest.TestCase):
         self.assertIn("not mounted", result.stderr)
         self.assertEqual(self.called("bindfs"), [])
 
-    def test_an_empty_folder_is_never_bound(self) -> None:
+    def test_an_empty_folder_is_bound(self) -> None:
+        (self.drive / "Downloads" / "a.pdf").unlink()  # Scott cleared Downloads
+        self.start_bound().terminate()
+
+    def test_a_missing_folder_or_a_symlink_is_never_bound(self) -> None:
         (self.drive / "Downloads" / "a.pdf").unlink()
+        (self.drive / "Downloads").rmdir()
         result = self.run_script("Downloads")
         self.assertEqual(result.returncode, 1)
-        self.assertIn("missing or empty", result.stderr)
+        self.assertIn("missing or not a directory", result.stderr)
+        (self.drive / "elsewhere").mkdir()
+        (self.drive / "Downloads").symlink_to(self.drive / "elsewhere")
+        result = self.run_script("Downloads")
+        self.assertEqual(result.returncode, 1)
         self.assertEqual(self.called("bindfs"), [])
 
     def test_the_layout_matches_the_host(self) -> None:

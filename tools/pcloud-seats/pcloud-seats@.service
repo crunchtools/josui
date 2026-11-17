@@ -3,7 +3,7 @@
 # seats (josui tools/pcloud-seats), one instance per folder, named by its
 # path under ~/pCloudDrive (systemd-escape): pcloud-seats@Downloads and
 # pcloud-seats@Autosync-Screenshots. The script refuses any other folder,
-# never binds an unmounted pCloud or an empty folder, and exits when pCloud's
+# never binds an unmounted pCloud or a missing folder, and exits when pCloud's
 # mount goes away or changes, so Restart= binds again.
 Description=Read-only pCloud %I for the agent seats (bindfs)
 StartLimitIntervalSec=0

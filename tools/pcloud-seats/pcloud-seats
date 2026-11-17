@@ -59,11 +59,13 @@ ln -sfn ../pCloudDrive/Autosync/Screenshots "$seats/Pictures/Screenshots"
 chcon -h -t container_file_t "$seats" "$seats/pCloudDrive" "${dst%/*}" "$dst" \
   "$seats/Pictures" "$seats/Downloads" "$seats/Pictures/Screenshots" || exit 1
 
-# Never bind an unmounted pCloud or an empty folder: exit, and Restart= tries
-# again, so the unit waits for pCloud's own mount (after Scott logs in).
+# Never bind an unmounted pCloud or a folder that is not a real directory:
+# exit, and Restart= tries again, so the unit waits for pCloud's own mount
+# (after Scott logs in). An empty folder is bound: it is a live view, and
+# Scott clears Downloads.
 if ! mountpoint -q "$drive"; then log "$drive is not mounted; waiting"; exit 1; fi
-if [ -z "$(find "$src" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
-  log "$src is missing or empty; waiting"; exit 1
+if ! [ -d "$src" ] || [ -L "$src" ]; then
+  log "$src is missing or not a directory; waiting"; exit 1
 fi
 
 # bindfs holds on to the pCloud mount it started on. When pCloud quits or
