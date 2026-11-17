@@ -5,8 +5,8 @@
 #   v1..v4   Dolza 1-4 - Vertex      m1..m4   Dolza 1-4 - Max
 #   x1..x4   Exedore 1-4 - Max       prime    Josui Prime
 #
-# `v2 shell` opens the seat's shell window instead. Ctrl-b d detaches and
-# leaves the session running.
+# `v2 shell` opens the seat's shell window instead, on the old image only.
+# Ctrl-b d detaches and leaves the session running.
 set -euo pipefail
 name=$(basename "$0")
 window=0
@@ -14,11 +14,24 @@ window=0
 # tmux's own bar in quiet grey instead of green, full color passed through
 # to Claude Code, and the mouse left to the terminal (right-click, select,
 # copy and paste work as anywhere else; scroll back with Ctrl-b [); then
-# attach.
-tmux_cmd=(tmux -u set -g status-style "bg=default,fg=colour244" ";"
-  set -g mouse off ";"
-  set -g window-status-current-style "fg=colour250,bold" ";"
-  set -g terminal-overrides ",*:Tc" ";" attach -t "dev:$window")
+# attach. The target is picked inside the container: under claude-agent
+# (developer 1.11.0+) Claude Code is session claude-agent on socket
+# claude-agent, with no shell window; the old image has session dev.
+inner='w=$1
+if tmux -L claude-agent has-session -t claude-agent 2>/dev/null; then
+  if [ "$w" = 1 ]; then
+    echo "seat: no shell window under claude-agent; attach without shell" >&2
+    exit 2
+  fi
+  set -- -L claude-agent; target=claude-agent:0
+else
+  set --; target="dev:$w"
+fi
+exec tmux -u "$@" set -g status-style "bg=default,fg=colour244" \; \
+  set -g mouse off \; \
+  set -g window-status-current-style "fg=colour250,bold" \; \
+  set -g terminal-overrides ",*:Tc" \; attach -t "$target"'
+tmux_cmd=(sh -c "$inner" seat "$window")
 # The terminal tab is titled with the seat's name, so several are told apart
 # at a glance; tmux leaves the title alone (set-titles is off by default).
 case "$name" in
