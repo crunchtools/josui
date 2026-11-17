@@ -196,30 +196,53 @@ class SeatAttachTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.bin = Path(tmp.name)
-        for tool in ("podman", "ssh"):
-            (self.bin / tool).write_text(f'#!/bin/sh\necho {tool} "$@"\n')
+        # podman and ssh say how they were called, then run the command they
+        # carry, so the target picked inside the container is what tmux
+        # prints. tmux has a claude-agent session only when CLAUDE_AGENT is set.
+        stubs = {
+            "podman": 'echo podman "$1" "$2" "$3" >&2; shift 3; exec "$@"',
+            "ssh": 'echo ssh "$1" "$2" >&2; shift 2; exec sh -c "$*"',
+            "tmux": 'case "$*" in "-L claude-agent has-session -t claude-agent") '
+            '[ -n "${CLAUDE_AGENT:-}" ]; exit;; esac; echo tmux "$@"',
+        }
+        for tool, body in stubs.items():
+            (self.bin / tool).write_text(f"#!/bin/sh\n{body}\n")
             (self.bin / tool).chmod(0o755)
 
-    def attach(self, link: str, *args: str) -> subprocess.CompletedProcess[str]:
+    def attach(self, link: str, *args: str, claude_agent: bool = False) -> subprocess.CompletedProcess[str]:
         (self.bin / link).symlink_to(SEAT)
         env = {**os.environ, "PATH": f"{self.bin}:{os.environ['PATH']}"}
+        env.pop("CLAUDE_AGENT", None)
+        if claude_agent:
+            env["CLAUDE_AGENT"] = "1"
         return subprocess.run(
             [str(self.bin / link), *args], env=env, capture_output=True, text=True, check=False
         )
 
+    STYLE = (
+        "set -g status-style bg=default,fg=colour244 ; set -g mouse off ; "
+        "set -g window-status-current-style fg=colour250,bold ; "
+        "set -g terminal-overrides ,*:Tc ; attach -t"
+    )
+
     def test_each_kind_of_seat_reaches_its_container(self) -> None:
-        style = (
-            "tmux -u set -g status-style bg=default,fg=colour244 ; set -g mouse off ; "
-            "set -g window-status-current-style fg=colour250,bold ; "
-            "set -g terminal-overrides ,*:Tc ; attach -t dev:0"
-        )
-        self.assertEqual(self.attach("v2").stdout.strip(), f"podman exec -it vertex2 {style}")
-        self.assertEqual(self.attach("m4").stdout.strip(), f"podman exec -it dmax4 {style}")
-        self.assertEqual(self.attach("prime").stdout.strip(), f"podman exec -it josui {style}")
-        # Through ssh the command is quoted for the remote shell.
-        remote = self.attach("x1").stdout.strip()
-        quoted = " ".join(f"'{word}'" for word in style.split(" "))
-        self.assertEqual(remote, f"ssh -t exedore podman exec -it max1 {quoted}")
+        for link, container in (("v2", "vertex2"), ("m4", "dmax4"), ("prime", "josui")):
+            with self.subTest(link=link):
+                result = self.attach(link)
+                self.assertEqual(result.stderr.strip(), f"podman exec -it {container}")
+                self.assertEqual(result.stdout.strip(), f"tmux -u {self.STYLE} dev:0")
+        # Through ssh the command survives the remote shell's word splitting.
+        remote = self.attach("x1")
+        self.assertEqual(remote.stderr.split("\n")[:2], ["ssh -t exedore", "podman exec -it max1"])
+        self.assertEqual(remote.stdout.strip(), f"tmux -u {self.STYLE} dev:0")
+
+    def test_claude_agent_is_attached_on_its_own_socket(self) -> None:
+        for link in ("prime", "m2", "x3"):
+            with self.subTest(link=link):
+                result = self.attach(link, claude_agent=True)
+                self.assertEqual(
+                    result.stdout.strip(), f"tmux -u -L claude-agent {self.STYLE} claude-agent:0"
+                )
 
     def test_the_tab_is_titled_with_the_seat_name_on_a_terminal(self) -> None:
         (self.bin / "v2").symlink_to(SEAT)
@@ -252,6 +275,12 @@ class SeatAttachTest(unittest.TestCase):
 
     def test_shell_opens_the_shell_window(self) -> None:
         self.assertTrue(self.attach("v3", "shell").stdout.strip().endswith("-t dev:1"))
+
+    def test_shell_under_claude_agent_says_there_is_none(self) -> None:
+        result = self.attach("prime", "shell", claude_agent=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("no shell window under claude-agent", result.stderr)
+        self.assertNotIn("attach", result.stdout)
 
     def test_an_unknown_name_prints_usage(self) -> None:
         result = self.attach("v9")

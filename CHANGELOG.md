@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- `seat` attaches to containers running under claude-agent (developer
+  1.11.0+): it picks the target inside the container, `-L claude-agent`
+  session `claude-agent:0` when that session exists and `dev:0` otherwise, so
+  `prime` attaches again and the seats keep working through the 1.12.0
+  rollout. `shell` says there is no shell window under claude-agent instead
+  of failing on a missing session.
+
 ## [1.0.0] - 2026-11-16
 
 ### Removed
