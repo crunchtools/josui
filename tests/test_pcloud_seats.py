@@ -29,6 +29,7 @@ class PcloudSeatsTest(unittest.TestCase):
         self.fake("mountpoint", f'[ -e "{self.mounted_flag}" ]')
         self.fake("bindfs", "exec sleep 30")
         self.fake("fusermount3", "exit 0")
+        self.fake("findmnt", "exit 0")
         self.fake("chcon", "exit 0")
 
     def fake(self, name: str, body: str) -> None:
@@ -72,6 +73,15 @@ class PcloudSeatsTest(unittest.TestCase):
         self.assertEqual(self.run_script("--stop", "Downloads").returncode, 0)
         self.assertEqual(self.called("fusermount3"), [f"fusermount3 -uz {self.seats}/pCloudDrive/Downloads"])
 
+    def test_a_failed_unmount_fails_stop_and_nothing_is_said_when_none_is_mounted(self) -> None:
+        self.fake("fusermount3", "exit 1")
+        result = self.run_script("--stop", "Downloads")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("could not unmount", result.stderr)
+        self.fake("findmnt", "exit 1")
+        result = self.run_script("--stop", "Downloads")
+        self.assertEqual((result.returncode, result.stderr), (0, ""))
+
     def test_an_unmounted_pcloud_is_never_bound(self) -> None:
         self.mounted_flag.unlink()
         result = self.run_script("Downloads")
@@ -105,7 +115,7 @@ class PcloudSeatsTest(unittest.TestCase):
             time.sleep(0.05)
         self.assertEqual(
             self.called("bindfs"),
-            [f"bindfs -f -r -o allow_other {self.drive}/Downloads {self.seats}/pCloudDrive/Downloads"],
+            [f"bindfs -f -r --perms=og-rwx -o allow_other {self.drive}/Downloads {self.seats}/pCloudDrive/Downloads"],
         )
         self.mounted_flag.unlink()  # pCloud quits under the running bindfs
         _, stderr = proc.communicate(timeout=10)

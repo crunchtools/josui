@@ -37,13 +37,21 @@ every=${PCLOUD_EVERY:-5}
 src=$drive/$folder
 dst=$seats/pCloudDrive/$folder
 
-unmount() { fusermount3 -uz "$dst" 2>/dev/null || true; }
+# findmnt reads the mount table without touching the mount, so a dead FUSE
+# mount (ENOTCONN) still counts as mounted and is cleared.
+unmount() {
+  findmnt -rn -M "$dst" >/dev/null || return 0
+  fusermount3 -uz "$dst" || { log "could not unmount $dst"; return 1; }
+}
 
-if [ "$stop" = 1 ]; then unmount; exit 0; fi
+if [ "$stop" = 1 ]; then unmount; exit; fi
 
 # A crashed bindfs leaves a dead mount behind.
-unmount
+unmount || exit 1
 mkdir -p "$dst" "$seats/Pictures" || exit 1
+# Only the owner: the seats run as Scott's uid (keep-id), and allow_other is
+# there to cross their user namespace, not to let other users in.
+chmod 700 "$seats" || exit 1
 ln -sfn pCloudDrive/Downloads "$seats/Downloads"
 ln -sfn ../pCloudDrive/Autosync/Screenshots "$seats/Pictures/Screenshots"
 # The labelled josui container must be able to walk the directory and follow
@@ -63,7 +71,7 @@ fi
 # the signal: watch pCloud's mount instead, by device number, which a new
 # FUSE mount never shares with the old one.
 dev=$(stat -c %d "$drive") || exit 1
-bindfs -f -r -o allow_other "$src" "$dst" &
+bindfs -f -r --perms=og-rwx -o allow_other "$src" "$dst" &
 pid=$!
 trap 'kill "$pid" 2>/dev/null; wait "$pid"; unmount; exit 0' TERM INT
 log "bound $src"
