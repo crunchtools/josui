@@ -18,6 +18,9 @@ Description=Read-only pCloud %I for the agent seats (bindfs)
 StartLimitIntervalSec=0
 
 [Service]
+# Only these two folders, ever: an instance is a path, and any other would
+# put that path into every seat.
+ExecStartPre=/usr/bin/test "%I" = Downloads -o "%I" = Autosync/Screenshots
 # A crashed bindfs leaves a dead mount behind.
 ExecStartPre=-/usr/bin/fusermount3 -uz %h/.pcloud-seats/pCloudDrive/%I
 ExecStartPre=/usr/bin/mkdir -p %h/.pcloud-seats/pCloudDrive/%I %h/.pcloud-seats/Pictures
