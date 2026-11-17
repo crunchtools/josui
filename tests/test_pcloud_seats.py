@@ -1,4 +1,4 @@
-"""tools/pcloud-seats: two folders only, never an unmounted pCloud, rebinds when pCloud changes."""
+"""tools/pcloud-seats: three folders only, read-write, never an unmounted pCloud, rebinds when pCloud changes."""
 
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ class PcloudSeatsTest(unittest.TestCase):
         return [line for line in self.calls.read_text().splitlines() if line.split()[0] == name]
 
     def test_any_other_folder_is_refused_and_nothing_is_unmounted(self) -> None:
-        for args in (["../../pCloudDrive"], ["--stop", "../../pCloudDrive"], ["--stop", ""], ["Documents"]):
+        for args in (["../../pCloudDrive"], ["--stop", "../../pCloudDrive"], ["--stop", ""], ["Music"]):
             result = self.run_script(*args)
             self.assertEqual(result.returncode, 2, args)
             self.assertIn("refusing", result.stderr)
@@ -122,6 +122,7 @@ class PcloudSeatsTest(unittest.TestCase):
         self.mounted_flag.unlink()  # stop before binding; the layout is made first
         self.run_script("Downloads")
         self.assertEqual(os.readlink(self.seats / "Downloads"), "pCloudDrive/Downloads")
+        self.assertEqual(os.readlink(self.seats / "Documents"), "pCloudDrive/Documents")
         self.assertEqual(
             os.readlink(self.seats / "Pictures/Screenshots"), "../pCloudDrive/Autosync/Screenshots"
         )
@@ -138,7 +139,7 @@ class PcloudSeatsTest(unittest.TestCase):
         self.assertEqual(
             self.called("bindfs"),
             [
-                "bindfs -f -r --perms=og-rwx -o allow_other "
+                "bindfs -f --perms=og-rwx -o allow_other "
                 f"{self.drive}/{folder} {self.seats}/pCloudDrive/{folder}"
             ],
         )
@@ -152,10 +153,11 @@ class PcloudSeatsTest(unittest.TestCase):
             len(self.called("fusermount3")), 2, "a stale mount is cleared before binding and after"
         )
 
-    def test_both_folders_bind_and_stop_at_their_host_paths(self) -> None:
+    def test_every_folder_binds_and_stops_at_its_host_path(self) -> None:
+        (self.drive / "Documents").mkdir(parents=True)
         (self.drive / "Autosync/Screenshots").mkdir(parents=True)
         (self.drive / "Autosync/Screenshots/s.png").write_bytes(b"png")
-        for folder in ("Downloads", "Autosync/Screenshots"):
+        for folder in ("Downloads", "Documents", "Autosync/Screenshots"):
             with self.subTest(folder=folder):
                 self.calls.unlink(missing_ok=True)
                 proc = self.start_bound(folder)
