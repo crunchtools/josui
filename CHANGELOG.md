@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-17
+
 ### Fixed
 - `seat` names its tmux targets exactly (`=claude-agent`, `=dev:N`), since
   `-t` otherwise matches a session whose name only starts with them.
