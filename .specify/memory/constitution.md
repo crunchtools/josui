@@ -3,7 +3,7 @@
 > **Version:** 3.2.0
 > **Ratified:** 2026-10-11
 > **Status:** Active
-> **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.42.0
+> **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.46.0
 > **Profile:** Host Tool
 
 Josui: Claude Code run as the agent its operator works with over Remote
