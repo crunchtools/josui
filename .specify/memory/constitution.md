@@ -240,9 +240,10 @@ the host's monitoring configuration.
 ## Hosts
 
 The host tools run from a checkout on the hosts that use them. `tools/seat-ssh`
-runs on Dolza, where the seats live. `tools/voice` and
-`tools/screenshot-mirror` run on the operator's machine. `deploy/dolza/` is a
-copy of the live quadlets on Dolza (see its README).
+runs on Dolza, where the seats live. `tools/voice` runs on the operator's
+machine. `deploy/dolza/` is a copy of the live quadlets on Dolza and of
+`pcloud-seats.service`, the user unit that gives the seats a read-only view
+of pCloud (see its README).
 
 Deviation from the Host Tool profile: there is no `install.sh` and no
 `systemd/` directory. Each tool says how it is installed in its README or header comment, and the one

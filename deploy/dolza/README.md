@@ -32,6 +32,16 @@ live files are the ones that run; when one changes, update the copy here too.
   Remote Control too. Attach with `podman exec -it dmaxN tmux attach -t dev`. It needs
   `~/Projects/dolza-services/dmaxN/data/state/.claude` to exist and be owned by the
   host user before its first start, for the same reason as Vertex.
+- `pcloud-seats.service` (user unit, `~/.config/systemd/user/`) and the
+  `pcloud.conf` drop-in on each container: Scott's pCloud drive, live and
+  read-only, at `/home/smccarty/pCloudDrive`, `~/Downloads` and
+  `~/Pictures/Screenshots` inside every seat. pCloud's own FUSE mount has no
+  `allow_other`, so bindfs re-exports it with it; root steps on the host:
+  `user_allow_other` in `/etc/fuse.conf`, `setsebool -P virt_use_fusefs on`,
+  and the `bindfs` package. The seats bind the plain directory
+  `~/.pcloud-seats` (bindfs mounted inside it) with `rslave`, which is what
+  lets a bindfs restart reach running seats: a bind of the FUSE mount itself
+  goes dead when bindfs does.
 
 Start the pod before its members. Starting a member with the pod down fails as
 a dependency.
