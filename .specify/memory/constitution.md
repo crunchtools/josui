@@ -1,6 +1,6 @@
 # josui Constitution
 
-> **Version:** 3.1.0
+> **Version:** 3.2.0
 > **Ratified:** 2026-10-11
 > **Status:** Active
 > **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.42.0
@@ -219,10 +219,10 @@ the host's monitoring configuration.
   be root-owned-writable outside the container's own volumes; only its own
   volumes mounted, no `/srv` tree and no production data, with one named
   exception on Dolza: two of the operator's pCloud folders, Downloads and
-  Autosync/Screenshots, read-only through bindfs (`tools/pcloud-seats`),
-  so a file he drags into a seat opens there. Nothing else of the drive is
-  exported, and a seat cannot write to either folder. Operator's decision,
-  a198; `--cap-drop=all`
+  Autosync/Screenshots, read-write through bindfs (`tools/pcloud-seats`),
+  so a file he drags into a seat opens there and a seat can save what it
+  generates. Nothing else of the drive is exported. Operator's decisions,
+  a198 and 2026-11-17 (read-write); `--cap-drop=all`
   plus the five measured capabilities, no `SYS_ADMIN` and never
   `--privileged`; `--read-only` with tmpfs on `/tmp`, `/var/tmp` and `/run`;
   its own internal network with no DNS and no host route; egress only through
@@ -273,3 +273,4 @@ quadlets are copies kept for review, not installed from here.
 | 2.2.0 | 2026-11-14 | Host directory on a user's machine is `~/Projects/<host>-services/<service>/` (Dolza), backed up with ~/Projects |
 | 3.0.0 | 2026-11-16 | The josui image is retired: no Containerfile and no container workflow, and the runtime image is quay.io/crunchtools/developer, governed there. The profile is Host Tool, because what is left is host tools and deploy copies; inherits v1.42.0, the first release with that profile. MAJOR because the published image goes away. Josui Prime a48 |
 | 3.1.0 | 2026-11-17 | The Dolza seats mount two of the operator's pCloud folders (Downloads, Autosync/Screenshots) read-only through bindfs, a named exception to "only its own volumes mounted"; the screenshot mirror is retired. Operator's decision, Josui Prime a198 |
+| 3.2.0 | 2026-11-17 | The two pCloud folders are read-write, so seats can save what they generate (presentation images). Operator's decision |
