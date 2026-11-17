@@ -8,8 +8,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 - The Dolza seats see Scott's pCloud Downloads and Screenshots folders live
-  and read-only through bindfs (`deploy/dolza/pcloud-seats@.service`,
-  drop-in `pcloud.conf`) at their host paths, so a dragged path from
+  and read-only through bindfs (`tools/pcloud-seats`, drop-in
+  `pcloud.conf`) at their host paths, so a dragged path from
   `~/Downloads` or `~/Pictures/Screenshots` opens inside a seat.
 
 ### Removed

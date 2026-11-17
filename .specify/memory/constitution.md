@@ -219,7 +219,7 @@ the host's monitoring configuration.
   be root-owned-writable outside the container's own volumes; only its own
   volumes mounted, no `/srv` tree and no production data, with one named
   exception on Dolza: two of the operator's pCloud folders, Downloads and
-  Autosync/Screenshots, read-only through bindfs (`pcloud-seats@.service`),
+  Autosync/Screenshots, read-only through bindfs (`tools/pcloud-seats`),
   so a file he drags into a seat opens there. Nothing else of the drive is
   exported, and a seat cannot write to either folder. Operator's decision,
   a198; `--cap-drop=all`
@@ -245,14 +245,14 @@ the host's monitoring configuration.
 ## Hosts
 
 The host tools run from a checkout on the hosts that use them. `tools/seat-ssh`
-runs on Dolza, where the seats live. `tools/voice` runs on the operator's
-machine. `deploy/dolza/` is a copy of the live quadlets on Dolza and of
-`pcloud-seats@.service`, the user unit that gives the seats a read-only view
-of two pCloud folders (see its README).
+and `tools/pcloud-seats` run on Dolza, where the seats live. `tools/voice`
+runs on the operator's machine. `deploy/dolza/` is a copy of the live
+quadlets on Dolza (see its README).
 
 Deviation from the Host Tool profile: there is no `install.sh` and no
 `systemd/` directory. Each tool says how it is installed in its README or header comment, and the one
-user unit, `tools/voice/josui-speak.service`, ships beside its tool. The
+user units, `tools/voice/josui-speak.service` and
+`tools/pcloud-seats/pcloud-seats@.service`, ship beside their tools. The
 quadlets are copies kept for review, not installed from here.
 
 ## History
