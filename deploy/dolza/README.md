@@ -33,9 +33,9 @@ live files are the ones that run; when one changes, update the copy here too.
   `~/Projects/dolza-services/dmaxN/data/state/.claude` to exist and be owned by the
   host user before its first start, for the same reason as Vertex.
 - `pcloud.conf`, with `tools/pcloud-seats/pcloud-seats@.service` (user unit,
-  `~/.config/systemd/user/`, enabled as `pcloud-seats@Downloads` and
-  `pcloud-seats@Autosync-Screenshots`), the drop-in on each container: those two pCloud folders, live and
-  read-only, at their host paths plus `~/Downloads` and
+  `~/.config/systemd/user/`, enabled as `pcloud-seats@Downloads`, `pcloud-seats@Documents` and
+  `pcloud-seats@Autosync-Screenshots`), the drop-in on each container: those three pCloud folders, live and
+  read-write, at their host paths plus `~/Downloads`, `~/Documents` and
   `~/Pictures/Screenshots` inside every seat; nothing else of the drive.
   pCloud's own FUSE mount has no `allow_other`, so bindfs re-exports each
   folder with it; root steps on the host:

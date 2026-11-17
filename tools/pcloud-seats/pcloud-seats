@@ -1,5 +1,5 @@
 #!/bin/bash
-# pcloud-seats -- a live, read-only view of one of Scott's pCloud folders for
+# pcloud-seats -- a live, read-write view of one of Scott's pCloud folders for
 # the Dolza agent seats, run by pcloud-seats@.service (one instance per
 # folder). pCloud mounts ~/pCloudDrive without allow_other, so the seats' user
 # namespace cannot open it; bindfs re-exports the folder with allow_other
@@ -7,7 +7,7 @@
 #
 # ~/.pcloud-seats is a plain directory laid out like the parts of
 # /home/smccarty the seats need: each folder bound at pCloudDrive/<folder>,
-# and relative symlinks Downloads and Pictures/Screenshots into them, as on
+# and relative symlinks Downloads, Documents and Pictures/Screenshots into them, as on
 # the host. Each seat binds the directory at /home/smccarty with rslave, so a
 # dragged host path resolves inside the seat and a rebind reaches running
 # seats without restarting them.
@@ -25,11 +25,11 @@ log() { echo "pcloud-seats: $*" >&2; }
 stop=0
 if [ "${1:-}" = --stop ]; then stop=1; shift; fi
 folder=${1:-}
-# Only these two folders, ever, in every mode: the folder is a path, and any
+# Only these three folders, ever, in every mode: the folder is a path, and any
 # other would put that path into every seat, or unmount something else.
 case "$folder" in
-  Downloads|Autosync/Screenshots) ;;
-  *) log "refusing '$folder': only Downloads and Autosync/Screenshots"; exit 2 ;;
+  Downloads|Documents|Autosync/Screenshots) ;;
+  *) log "refusing '$folder': only Downloads, Documents and Autosync/Screenshots"; exit 2 ;;
 esac
 drive=${PCLOUD_DRIVE:-$HOME/pCloudDrive}
 seats=${PCLOUD_SEATS:-$HOME/.pcloud-seats}
@@ -53,11 +53,12 @@ mkdir -p "$dst" "$seats/Pictures" || exit 1
 # there to cross their user namespace, not to let other users in.
 chmod 700 "$seats" || exit 1
 ln -sfn pCloudDrive/Downloads "$seats/Downloads"
+ln -sfn pCloudDrive/Documents "$seats/Documents"
 ln -sfn ../pCloudDrive/Autosync/Screenshots "$seats/Pictures/Screenshots"
 # The labelled josui container must be able to walk the directory and follow
 # the symlinks; FUSE mounts themselves cannot be relabelled and need not be.
 chcon -h -t container_file_t "$seats" "$seats/pCloudDrive" "${dst%/*}" "$dst" \
-  "$seats/Pictures" "$seats/Downloads" "$seats/Pictures/Screenshots" || exit 1
+  "$seats/Pictures" "$seats/Downloads" "$seats/Documents" "$seats/Pictures/Screenshots" || exit 1
 
 # Never bind an unmounted pCloud or a folder that is not a real directory:
 # exit, and Restart= tries again, so the unit waits for pCloud's own mount
@@ -73,7 +74,7 @@ fi
 # the signal: watch pCloud's mount instead, by device number, which a new
 # FUSE mount never shares with the old one.
 dev=$(stat -c %d "$drive") || exit 1
-bindfs -f -r --perms=og-rwx -o allow_other "$src" "$dst" &
+bindfs -f --perms=og-rwx -o allow_other "$src" "$dst" &
 pid=$!
 trap 'kill "$pid" 2>/dev/null; wait "$pid"; unmount; exit 0' TERM INT
 log "bound $src"

@@ -1,11 +1,11 @@
 [Unit]
-# A live, read-only view of one of Scott's pCloud folders for the Dolza agent
+# A live, read-write view of one of Scott's pCloud folders for the Dolza agent
 # seats (josui tools/pcloud-seats), one instance per folder, named by its
-# path under ~/pCloudDrive (systemd-escape): pcloud-seats@Downloads and
+# path under ~/pCloudDrive (systemd-escape): pcloud-seats@Downloads, pcloud-seats@Documents and
 # pcloud-seats@Autosync-Screenshots. The script refuses any other folder,
 # never binds an unmounted pCloud or a missing folder, and exits when pCloud's
 # mount goes away or changes, so Restart= binds again.
-Description=Read-only pCloud %I for the agent seats (bindfs)
+Description=Read-write pCloud %I for the agent seats (bindfs)
 StartLimitIntervalSec=0
 
 [Service]
