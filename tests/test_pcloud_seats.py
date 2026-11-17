@@ -101,7 +101,10 @@ class PcloudSeatsTest(unittest.TestCase):
 
     def test_an_empty_folder_is_bound(self) -> None:
         (self.drive / "Downloads" / "a.pdf").unlink()  # Scott cleared Downloads
-        self.start_bound().terminate()
+        proc = self.start_bound()
+        time.sleep(0.5)  # several looks at pCloud's mount
+        self.assertIsNone(proc.poll(), "an empty folder must stay bound, not wait for files")
+        proc.terminate()
 
     def test_a_missing_folder_or_a_symlink_is_never_bound(self) -> None:
         (self.drive / "Downloads" / "a.pdf").unlink()
