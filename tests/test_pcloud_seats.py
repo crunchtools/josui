@@ -47,7 +47,12 @@ class PcloudSeatsTest(unittest.TestCase):
 
     def run_script(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            ["bash", str(SCRIPT), *args], env=self.env(), capture_output=True, text=True, timeout=20, check=False
+            ["bash", str(SCRIPT), *args],
+            env=self.env(),
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
         )
 
     def called(self, name: str) -> list[str]:
@@ -85,7 +90,9 @@ class PcloudSeatsTest(unittest.TestCase):
         self.mounted_flag.unlink()  # stop before binding; the layout is made first
         self.run_script("Downloads")
         self.assertEqual(os.readlink(self.seats / "Downloads"), "pCloudDrive/Downloads")
-        self.assertEqual(os.readlink(self.seats / "Pictures/Screenshots"), "../pCloudDrive/Autosync/Screenshots")
+        self.assertEqual(
+            os.readlink(self.seats / "Pictures/Screenshots"), "../pCloudDrive/Autosync/Screenshots"
+        )
         self.assertTrue((self.seats / "pCloudDrive/Downloads").is_dir())
 
     def test_pcloud_going_away_ends_the_bind_so_it_is_bound_again(self) -> None:
@@ -104,12 +111,19 @@ class PcloudSeatsTest(unittest.TestCase):
         _, stderr = proc.communicate(timeout=10)
         self.assertEqual(proc.returncode, 1, "a non-zero exit is what makes Restart= bind again")
         self.assertIn("went away or changed", stderr)
-        self.assertEqual(len(self.called("fusermount3")), 2, "a stale mount is cleared before binding and after")
+        self.assertEqual(
+            len(self.called("fusermount3")), 2, "a stale mount is cleared before binding and after"
+        )
 
     def test_bindfs_dying_ends_the_unit_so_it_is_bound_again(self) -> None:
         self.fake("bindfs", "exit 3")
         proc = subprocess.run(
-            ["bash", str(SCRIPT), "Downloads"], env=self.env(), capture_output=True, text=True, timeout=10, check=False
+            ["bash", str(SCRIPT), "Downloads"],
+            env=self.env(),
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
         )
         self.assertEqual(proc.returncode, 1)
         self.assertIn("bindfs exited (3)", proc.stderr)
