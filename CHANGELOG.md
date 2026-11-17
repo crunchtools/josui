@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- The Dolza seats see Scott's pCloud Downloads and Screenshots folders live
+  and read-only through bindfs (`tools/pcloud-seats`, drop-in
+  `pcloud.conf`) at their host paths, so a dragged path from
+  `~/Downloads` or `~/Pictures/Screenshots` opens inside a seat.
+
+### Removed
+- `tools/screenshot-mirror` and its unit and drop-ins: the bindfs view
+  replaces the copy.
+
 ## [1.0.1] - 2026-11-17
 
 ### Fixed

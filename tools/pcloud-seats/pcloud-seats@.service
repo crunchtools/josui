@@ -1,0 +1,18 @@
+[Unit]
+# A live, read-only view of one of Scott's pCloud folders for the Dolza agent
+# seats (josui tools/pcloud-seats), one instance per folder, named by its
+# path under ~/pCloudDrive (systemd-escape): pcloud-seats@Downloads and
+# pcloud-seats@Autosync-Screenshots. The script refuses any other folder,
+# never binds an unmounted pCloud or a missing folder, and exits when pCloud's
+# mount goes away or changes, so Restart= binds again.
+Description=Read-only pCloud %I for the agent seats (bindfs)
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart=%h/Projects/crunchtools/josui/tools/pcloud-seats/pcloud-seats %I
+ExecStopPost=%h/Projects/crunchtools/josui/tools/pcloud-seats/pcloud-seats --stop %I
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

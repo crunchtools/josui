@@ -1,0 +1,92 @@
+#!/bin/bash
+# pcloud-seats -- a live, read-only view of one of Scott's pCloud folders for
+# the Dolza agent seats, run by pcloud-seats@.service (one instance per
+# folder). pCloud mounts ~/pCloudDrive without allow_other, so the seats' user
+# namespace cannot open it; bindfs re-exports the folder with allow_other
+# (root steps: user_allow_other in /etc/fuse.conf, virt_use_fusefs on).
+#
+# ~/.pcloud-seats is a plain directory laid out like the parts of
+# /home/smccarty the seats need: each folder bound at pCloudDrive/<folder>,
+# and relative symlinks Downloads and Pictures/Screenshots into them, as on
+# the host. Each seat binds the directory at /home/smccarty with rslave, so a
+# dragged host path resolves inside the seat and a rebind reaches running
+# seats without restarting them.
+#
+#   pcloud-seats <folder>         bind it and watch it; exits when it must be
+#                                 bound again, so Restart= rebinds
+#   pcloud-seats --stop <folder>  unmount it (ExecStopPost)
+#
+#   PCLOUD_DRIVE  pCloud's own mount   (default ~/pCloudDrive)
+#   PCLOUD_SEATS  the seats' directory (default ~/.pcloud-seats)
+#   PCLOUD_EVERY  seconds between looks at pCloud's mount (default 5)
+set -uo pipefail
+log() { echo "pcloud-seats: $*" >&2; }
+
+stop=0
+if [ "${1:-}" = --stop ]; then stop=1; shift; fi
+folder=${1:-}
+# Only these two folders, ever, in every mode: the folder is a path, and any
+# other would put that path into every seat, or unmount something else.
+case "$folder" in
+  Downloads|Autosync/Screenshots) ;;
+  *) log "refusing '$folder': only Downloads and Autosync/Screenshots"; exit 2 ;;
+esac
+drive=${PCLOUD_DRIVE:-$HOME/pCloudDrive}
+seats=${PCLOUD_SEATS:-$HOME/.pcloud-seats}
+every=${PCLOUD_EVERY:-5}
+src=$drive/$folder
+dst=$seats/pCloudDrive/$folder
+
+# findmnt reads the mount table without touching the mount, so a dead FUSE
+# mount (ENOTCONN) still counts as mounted and is cleared.
+unmount() {
+  findmnt -rn -M "$dst" >/dev/null || return 0
+  fusermount3 -uz "$dst" || { log "could not unmount $dst"; return 1; }
+}
+
+if [ "$stop" = 1 ]; then unmount; exit; fi
+
+# A crashed bindfs leaves a dead mount behind.
+unmount || exit 1
+mkdir -p "$dst" "$seats/Pictures" || exit 1
+# Only the owner: the seats run as Scott's uid (keep-id), and allow_other is
+# there to cross their user namespace, not to let other users in.
+chmod 700 "$seats" || exit 1
+ln -sfn pCloudDrive/Downloads "$seats/Downloads"
+ln -sfn ../pCloudDrive/Autosync/Screenshots "$seats/Pictures/Screenshots"
+# The labelled josui container must be able to walk the directory and follow
+# the symlinks; FUSE mounts themselves cannot be relabelled and need not be.
+chcon -h -t container_file_t "$seats" "$seats/pCloudDrive" "${dst%/*}" "$dst" \
+  "$seats/Pictures" "$seats/Downloads" "$seats/Pictures/Screenshots" || exit 1
+
+# Never bind an unmounted pCloud or a folder that is not a real directory:
+# exit, and Restart= tries again, so the unit waits for pCloud's own mount
+# (after Scott logs in). An empty folder is bound: it is a live view, and
+# Scott clears Downloads.
+if ! mountpoint -q "$drive"; then log "$drive is not mounted; waiting"; exit 1; fi
+if ! [ -d "$src" ] || [ -L "$src" ]; then
+  log "$src is missing or not a directory; waiting"; exit 1
+fi
+
+# bindfs holds on to the pCloud mount it started on. When pCloud quits or
+# restarts, bindfs stays up serving the dead mount, so its exit cannot be
+# the signal: watch pCloud's mount instead, by device number, which a new
+# FUSE mount never shares with the old one.
+dev=$(stat -c %d "$drive") || exit 1
+bindfs -f -r --perms=og-rwx -o allow_other "$src" "$dst" &
+pid=$!
+trap 'kill "$pid" 2>/dev/null; wait "$pid"; unmount; exit 0' TERM INT
+log "bound $src"
+while kill -0 "$pid" 2>/dev/null; do
+  sleep "$every" & wait $!
+  if ! mountpoint -q "$drive" || [ "$(stat -c %d "$drive" 2>/dev/null)" != "$dev" ]; then
+    log "pCloud's mount went away or changed; binding again"
+    kill "$pid" 2>/dev/null; wait "$pid"; unmount
+    exit 1
+  fi
+done
+wait "$pid"
+status=$?
+log "bindfs exited ($status); binding again"
+unmount
+exit 1

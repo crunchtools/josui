@@ -1,0 +1,15 @@
+[[findings]]
+agent = "security"
+category = "security"
+file = "tools/pcloud-seats/pcloud-seats"
+evidence = "bindfs -f -r --perms=og-rwx -o allow_other \"$src\" \"$dst\" &"
+status = "not-a-bug"
+reason = "bindfs hands a symlink to the seat as a link; the seat's kernel resolves it inside the seat's own mount namespace, so it can only name files the seat can already read, and the view is read-only. The mirror skipped symlinks because it copied on the HOST, where a link would have pulled in host files; that risk does not exist here."
+
+[[findings]]
+agent = "tests"
+category = "test-coverage"
+file = "tools/pcloud-seats/pcloud-seats"
+evidence = "bindfs -f -r --perms=og-rwx -o allow_other \"$src\" \"$dst\" &"
+status = "not-a-bug"
+reason = "Needs real FUSE and a container, which CI does not have; measured on Dolza instead (a198, 2026-11-17): a throwaway bindfs folder holding an absolute symlink to ~/.ssh/config and a relative one climbing out of the folder, mounted into a keep-id container, lists both links and both read as No such file or directory, while a regular file reads."

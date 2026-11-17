@@ -1,6 +1,6 @@
 # josui Constitution
 
-> **Version:** 3.0.0
+> **Version:** 3.1.0
 > **Ratified:** 2026-10-11
 > **Status:** Active
 > **Inherits:** [crunchtools/constitution](https://github.com/crunchtools/constitution) v1.42.0
@@ -217,7 +217,12 @@ the host's monitoring configuration.
   What does SELinux's old job instead, in order of weight: UID 1000 mapped to
   an unprivileged host range, so file access is DAC's problem and no mount may
   be root-owned-writable outside the container's own volumes; only its own
-  volumes mounted, no `/srv` tree and no production data; `--cap-drop=all`
+  volumes mounted, no `/srv` tree and no production data, with one named
+  exception on Dolza: two of the operator's pCloud folders, Downloads and
+  Autosync/Screenshots, read-only through bindfs (`tools/pcloud-seats`),
+  so a file he drags into a seat opens there. Nothing else of the drive is
+  exported, and a seat cannot write to either folder. Operator's decision,
+  a198; `--cap-drop=all`
   plus the five measured capabilities, no `SYS_ADMIN` and never
   `--privileged`; `--read-only` with tmpfs on `/tmp`, `/var/tmp` and `/run`;
   its own internal network with no DNS and no host route; egress only through
@@ -240,13 +245,14 @@ the host's monitoring configuration.
 ## Hosts
 
 The host tools run from a checkout on the hosts that use them. `tools/seat-ssh`
-runs on Dolza, where the seats live. `tools/voice` and
-`tools/screenshot-mirror` run on the operator's machine. `deploy/dolza/` is a
-copy of the live quadlets on Dolza (see its README).
+and `tools/pcloud-seats` run on Dolza, where the seats live. `tools/voice`
+runs on the operator's machine. `deploy/dolza/` is a copy of the live
+quadlets on Dolza (see its README).
 
 Deviation from the Host Tool profile: there is no `install.sh` and no
 `systemd/` directory. Each tool says how it is installed in its README or header comment, and the one
-user unit, `tools/voice/josui-speak.service`, ships beside its tool. The
+user units, `tools/voice/josui-speak.service` and
+`tools/pcloud-seats/pcloud-seats@.service`, ship beside their tools. The
 quadlets are copies kept for review, not installed from here.
 
 ## History
@@ -266,3 +272,4 @@ quadlets are copies kept for review, not installed from here.
 | 2.1.0 | 2026-11-11 | The blocking Trivy gate and `.trivyignore` are retired with the fleet's per-build scan (constitution 1.40.0): published images are scanned on a schedule by the fleet CVE check (RT #1551) |
 | 2.2.0 | 2026-11-14 | Host directory on a user's machine is `~/Projects/<host>-services/<service>/` (Dolza), backed up with ~/Projects |
 | 3.0.0 | 2026-11-16 | The josui image is retired: no Containerfile and no container workflow, and the runtime image is quay.io/crunchtools/developer, governed there. The profile is Host Tool, because what is left is host tools and deploy copies; inherits v1.42.0, the first release with that profile. MAJOR because the published image goes away. Josui Prime a48 |
+| 3.1.0 | 2026-11-17 | The Dolza seats mount two of the operator's pCloud folders (Downloads, Autosync/Screenshots) read-only through bindfs, a named exception to "only its own volumes mounted"; the screenshot mirror is retired. Operator's decision, Josui Prime a198 |
