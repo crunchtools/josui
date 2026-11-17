@@ -7,10 +7,10 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
-- The Dolza seats see Scott's pCloud drive live and read-only through bindfs
-  (`deploy/dolza/pcloud-seats.service`, drop-in `pcloud.conf`) at
-  `/home/smccarty/pCloudDrive`, `~/Downloads` and `~/Pictures/Screenshots`,
-  so a dragged path from any of them opens inside a seat.
+- The Dolza seats see Scott's pCloud Downloads and Screenshots folders live
+  and read-only through bindfs (`deploy/dolza/pcloud-seats@.service`,
+  drop-in `pcloud.conf`) at their host paths, so a dragged path from
+  `~/Downloads` or `~/Pictures/Screenshots` opens inside a seat.
 
 ### Removed
 - `tools/screenshot-mirror` and its unit and drop-ins: the bindfs view

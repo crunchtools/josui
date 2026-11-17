@@ -1,0 +1,36 @@
+[Unit]
+# A live, read-only view of one of Scott's pCloud folders for the Dolza agent
+# seats, one instance per folder, named by its path under ~/pCloudDrive
+# (systemd-escape): pcloud-seats@Downloads, pcloud-seats@Autosync-Screenshots.
+# pCloud mounts ~/pCloudDrive without allow_other, so the seats' user
+# namespace cannot open it; bindfs re-exports the folder with allow_other
+# (root steps: user_allow_other in /etc/fuse.conf, virt_use_fusefs on). Only
+# these folders are exported, never the whole drive.
+#
+# ~/.pcloud-seats is a plain directory laid out like the parts of
+# /home/smccarty the seats need: each folder bound at pCloudDrive/<path>, and
+# relative symlinks Downloads and Pictures/Screenshots into them, as on the
+# host. Each seat binds the directory at /home/smccarty with rslave, so a
+# dragged host path resolves inside the seat and a bindfs restart reaches
+# running seats without restarting them. The directories and symlinks carry
+# container_file_t so the labelled josui container can follow them.
+Description=Read-only pCloud %I for the agent seats (bindfs)
+StartLimitIntervalSec=0
+
+[Service]
+# A crashed bindfs leaves a dead mount behind.
+ExecStartPre=-/usr/bin/fusermount3 -uz %h/.pcloud-seats/pCloudDrive/%I
+ExecStartPre=/usr/bin/mkdir -p %h/.pcloud-seats/pCloudDrive/%I %h/.pcloud-seats/Pictures
+ExecStartPre=/usr/bin/ln -sfn pCloudDrive/Downloads %h/.pcloud-seats/Downloads
+ExecStartPre=/usr/bin/ln -sfn ../pCloudDrive/Autosync/Screenshots %h/.pcloud-seats/Pictures/Screenshots
+ExecStartPre=/usr/bin/chcon -h -t container_file_t %h/.pcloud-seats %h/.pcloud-seats/pCloudDrive %h/.pcloud-seats/pCloudDrive/%I/.. %h/.pcloud-seats/pCloudDrive/%I %h/.pcloud-seats/Pictures %h/.pcloud-seats/Downloads %h/.pcloud-seats/Pictures/Screenshots
+# Never bind an unmounted pCloud or an empty folder: fail, and Restart= tries
+# again, so the unit waits for pCloud's own mount (after Scott logs in).
+ExecStartPre=/bin/sh -c 'mountpoint -q %h/pCloudDrive && test -n "$$(find "%h/pCloudDrive/%I" -mindepth 1 -maxdepth 1 -print -quit)"'
+ExecStart=/usr/bin/bindfs -f -r -o allow_other "%h/pCloudDrive/%I" "%h/.pcloud-seats/pCloudDrive/%I"
+ExecStopPost=-/usr/bin/fusermount3 -uz %h/.pcloud-seats/pCloudDrive/%I
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
