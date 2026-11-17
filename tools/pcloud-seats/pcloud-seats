@@ -1,5 +1,5 @@
 #!/bin/bash
-# pcloud-seats -- a live, read-only view of one of Scott's pCloud folders for
+# pcloud-seats -- a live, read-write view of one of Scott's pCloud folders for
 # the Dolza agent seats, run by pcloud-seats@.service (one instance per
 # folder). pCloud mounts ~/pCloudDrive without allow_other, so the seats' user
 # namespace cannot open it; bindfs re-exports the folder with allow_other
@@ -73,7 +73,7 @@ fi
 # the signal: watch pCloud's mount instead, by device number, which a new
 # FUSE mount never shares with the old one.
 dev=$(stat -c %d "$drive") || exit 1
-bindfs -f -r --perms=og-rwx -o allow_other "$src" "$dst" &
+bindfs -f --perms=og-rwx -o allow_other "$src" "$dst" &
 pid=$!
 trap 'kill "$pid" 2>/dev/null; wait "$pid"; unmount; exit 0' TERM INT
 log "bound $src"
