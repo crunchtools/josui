@@ -202,7 +202,7 @@ class SeatAttachTest(unittest.TestCase):
         stubs = {
             "podman": 'echo podman "$1" "$2" "$3" >&2; shift 3; exec "$@"',
             "ssh": 'echo ssh "$1" "$2" >&2; shift 2; exec sh -c "$*"',
-            "tmux": 'case "$*" in "-L claude-agent has-session -t claude-agent") '
+            "tmux": 'case "$*" in "-L claude-agent has-session -t =claude-agent") '
             '[ -n "${CLAUDE_AGENT:-}" ]; exit;; esac; echo tmux "$@"',
         }
         for tool, body in stubs.items():
@@ -230,18 +230,18 @@ class SeatAttachTest(unittest.TestCase):
             with self.subTest(link=link):
                 result = self.attach(link)
                 self.assertEqual(result.stderr.strip(), f"podman exec -it {container}")
-                self.assertEqual(result.stdout.strip(), f"tmux -u {self.STYLE} dev:0")
+                self.assertEqual(result.stdout.strip(), f"tmux -u {self.STYLE} =dev:0")
         # Through ssh the command survives the remote shell's word splitting.
         remote = self.attach("x1")
         self.assertEqual(remote.stderr.split("\n")[:2], ["ssh -t exedore", "podman exec -it max1"])
-        self.assertEqual(remote.stdout.strip(), f"tmux -u {self.STYLE} dev:0")
+        self.assertEqual(remote.stdout.strip(), f"tmux -u {self.STYLE} =dev:0")
 
     def test_claude_agent_is_attached_on_its_own_socket(self) -> None:
         for link in ("prime", "m2", "x3"):
             with self.subTest(link=link):
                 result = self.attach(link, claude_agent=True)
                 self.assertEqual(
-                    result.stdout.strip(), f"tmux -u -L claude-agent {self.STYLE} claude-agent:0"
+                    result.stdout.strip(), f"tmux -u -L claude-agent {self.STYLE} =claude-agent:0"
                 )
 
     def test_the_tab_is_titled_with_the_seat_name_on_a_terminal(self) -> None:
@@ -274,7 +274,7 @@ class SeatAttachTest(unittest.TestCase):
                 self.assertIn(f"\033]0;{title}\007", out)
 
     def test_shell_opens_the_shell_window(self) -> None:
-        self.assertTrue(self.attach("v3", "shell").stdout.strip().endswith("-t dev:1"))
+        self.assertTrue(self.attach("v3", "shell").stdout.strip().endswith("-t =dev:1"))
 
     def test_shell_under_claude_agent_says_there_is_none(self) -> None:
         result = self.attach("prime", "shell", claude_agent=True)
