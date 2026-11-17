@@ -1,0 +1,7 @@
+[[findings]]
+agent = "security"
+category = "security"
+file = "tools/pcloud-seats/pcloud-seats"
+evidence = "bindfs -f -r --perms=og-rwx -o allow_other \"$src\" \"$dst\" &"
+status = "not-a-bug"
+reason = "bindfs hands a symlink to the seat as a link; the seat's kernel resolves it inside the seat's own mount namespace, so it can only name files the seat can already read, and the view is read-only. The mirror skipped symlinks because it copied on the HOST, where a link would have pulled in host files; that risk does not exist here."
