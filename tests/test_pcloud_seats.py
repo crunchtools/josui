@@ -1,4 +1,4 @@
-"""tools/pcloud-seats: three folders only, read-write, never an unmounted pCloud, rebinds when pCloud changes."""
+"""tools/pcloud-seats: three folders, read-write, never an unmounted pCloud, rebinds on change."""
 
 from __future__ import annotations
 
