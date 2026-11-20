@@ -1,0 +1,57 @@
+[Unit]
+# Max seat 3 (2026-11-14 decision): a Claude Code worker on Scott's Max
+# account, reached by Josui Prime and the claude.ai app over Remote Control and
+# by a person with: podman exec -it max3 tmux attach -t dev
+# Max 1-3 are the gloval developer seats 1-3 moved here (state copied with
+# numeric ids); Max 4 is new and logs in once, interactively.
+# Deliberately no io.containers.autoupdate label: seats run long jobs.
+Description=Max seat 3 (Claude Code worker, Remote Control)
+Wants=network-online.target
+After=network-online.target
+RequiresMountsFor=/var/mnt/onsite
+
+[Container]
+Image=quay.io/crunchtools/developer:latest
+ContainerName=max3
+HostName=max3
+ReadOnly=true
+Tmpfs=/tmp:rw,nosuid,size=2g
+Tmpfs=/var/tmp:rw,nosuid,size=1g
+# Nested podman, as measured for the developer seats (developer README).
+DropCapability=all
+AddCapability=setuid setgid sys_chroot chown setfcap
+SecurityLabelDisable=true
+Unmask=/proc/*
+AddDevice=/dev/fuse
+UIDMap=0:1200000:65536
+GIDMap=0:1200000:65536
+Secret=trentina-exedore-max-token-2,type=env,target=TRENTINA_MCP_TOKEN
+Environment=JOSUI_MODE=worker
+Environment=JOSUI_RC=1
+Environment="JOSUI_NAME=Exedore 3 - Max"
+Environment=JOSUI_WORKDIR=/home/podman/work
+Environment=JOSUI_PERMISSION_MODE=bypassPermissions
+Environment=JOSUI_ANSWER_PERMISSIONS=1
+Environment=JOSUI_GIT_NAME=Josui
+Environment=JOSUI_GIT_EMAIL=josui@crunchtools.com
+Environment=TRENTINA_MCP_URL=https://trentina.crunchtools.com/gateway/exedore-max/mcp
+Environment=TRENTINA_GIT_URL=https://trentina.crunchtools.com/proxy/git
+Environment=NO_PROXY=127.0.0.1,localhost,::1
+Volume=/srv/max-shared/identity:/etc/josui:ro
+Volume=/srv/max-shared/identity/30-statusline.json:/etc/claude-code/managed-settings.d/30-statusline.json:ro
+Volume=/srv/max3/data/state:/home/podman
+Volume=/var/mnt/onsite/seats/max3/containers:/home/podman/.local/share/containers
+Volume=/srv/max3/data/audit:/var/log/josui
+Volume=/srv/max3/data/josui-skills:/var/lib/josui/josui-skills
+PodmanArgs=--init --memory=7g --memory-swap=7g --pids-limit=4096
+# python-sdlc sizes its gate from the host (-n 12, --memory 8g), not this 7g seat.
+Environment=SDLC_CPUS=4
+Environment=SDLC_MEMORY=6g
+
+[Service]
+Restart=always
+RestartSec=30
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target
