@@ -46,14 +46,20 @@ live files are the ones that run; when one changes, update the copy here too.
   not copied here. The seats' own profile, `dolza-vertex`, holds no
   `openrouter-gatehouse` key: a Vertex seat holds Red Hat content, and with
   that key its token would carry anything on the seat to OpenRouter.
-- `vertex@.container.d/gatehouse.conf`: the Vertex seats' Gatehouse runs on its
-  own gateway profile, `dolza-gatehouse`. That profile has no backends, no
-  `git` block and one usable route, `/proxy/llm/openrouter-gatehouse`. Its token
-  sits in OpenBao `kv dolza/gatehouse-vertex/gatehouse.env` beside the pinned
-  URL, reaches the seat through `srv-secrets@gatehouse-vertex`, and is mounted
-  at `/etc/josui/mcp-env/gatehouse.env`, which developer-entrypoint prefers over
-  writing one from the seat token. The mountpoint needs
-  `~/Projects/dolza-services/agents/developer-identity/mcp-env` to exist, empty.
+- `vertex@.container.d/gatehouse.conf`: the Vertex seats' `gatehouse.env`,
+  Gatehouse's own gateway token (profile `dolza-gatehouse`) instead of the
+  seat's. That profile has no tools, no `git` route and no `/proxy/llm` route;
+  its one way out is the guarded egress route
+  `/proxy/http/openrouter-gatehouse`, under block, with a semantic request
+  guard that refuses Red Hat content. The token is a file any process on the
+  seat can read, so it is not a boundary by itself; the gateway guard is.
+  Delivered from OpenBao `kv dolza/gatehouse-vertex/gatehouse.env` by
+  `srv-secrets@gatehouse-vertex`, mounted at `/etc/josui/mcp-env/gatehouse.env`
+  (developer-entrypoint prefers a mounted file); the mountpoint
+  `~/Projects/dolza-services/agents/developer-identity/mcp-env` must exist,
+  empty. Known gap (a813): Trentina 6.25.0's L2 classifier flags Gatehouse's
+  own review prompts, so under block this route currently refuses every
+  review and Vertex-seat pushes stop at the Gatehouse gate.
 - `pcloud.conf`, with `tools/pcloud-seats/pcloud-seats@.service` (user unit,
   `~/.config/systemd/user/`, enabled as `pcloud-seats@Downloads`, `pcloud-seats@Documents` and
   `pcloud-seats@Autosync-Screenshots`), the drop-in on each container: those three pCloud folders, live and

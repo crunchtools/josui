@@ -9,7 +9,7 @@ All notable changes to this project are documented here. The format follows
 ### Changed
 - `deploy/dolza/trentina.container`: a copy of Dolza's gateway quadlet, now with a pinned bridge address so the seats' baked `gatehouse.env` survives a gateway restart.
 - Dolza's `crunchtools` network hands out dynamic addresses only from 10.89.0.100-.254, so the gateway's pinned .55 can never go to another container.
-- Dolza's Vertex seats run Gatehouse on their own narrow gateway token (profile `dolza-gatehouse`, only `/proxy/llm/openrouter-gatehouse`), mounted as `gatehouse.env` by `deploy/dolza/vertex@.container.d/gatehouse.conf`.
+- Dolza's Vertex seats run Gatehouse on their own gateway token (profile `dolza-gatehouse`), mounted as `gatehouse.env` by `deploy/dolza/vertex@.container.d/gatehouse.conf`. Its only route is the guarded egress `/proxy/http/openrouter-gatehouse`; the token alone is not a boundary, the gateway's semantic request guard is. Until Trentina stops L2 flagging Gatehouse's prompts, that route refuses every review.
 - Dolza's `dolza-vertex` gateway profile no longer holds the `openrouter-gatehouse` key, so a Vertex seat's token cannot reach OpenRouter. The README records it; the profile itself is live gateway state and stays out of this repo.
 - Gatehouse triage gets `review_result`, so a PR whose review job died before posting anything is held instead of passing.
 - The Dolza seats see Scott's pCloud Downloads, Documents and Screenshots folders live
