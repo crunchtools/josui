@@ -8,6 +8,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 - `deploy/dolza/trentina.container`: a copy of Dolza's gateway quadlet, now with a pinned bridge address so the seats' baked `gatehouse.env` survives a gateway restart.
+- Dolza's `dolza-vertex` gateway profile no longer holds the `openrouter-gatehouse` key, so a Vertex seat's token cannot reach OpenRouter. The README records it; the profile itself is live gateway state and stays out of this repo.
 - Gatehouse triage gets `review_result`, so a PR whose review job died before posting anything is held instead of passing.
 - The Dolza seats see Scott's pCloud Downloads, Documents and Screenshots folders live
   and read-write through bindfs (`tools/pcloud-seats`, drop-in
