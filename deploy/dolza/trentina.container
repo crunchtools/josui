@@ -12,14 +12,15 @@ After=network-online.target
 # 6.15.0 and 6.16.0 have since superseded it, so the "unpin once a release
 # supersedes it" condition is met -- but an explicit pin is kept rather than
 # returning to `:latest`, because the lesson of #1559 is that a laptop restart
-# must not be able to silently pull a future bad build. 6.17.0 is what gloval
-# runs (session adoption, #775 / PR #777); breetai bumped to match 2026-11-10.
+# must not be able to silently pull a future bad build. Moved to 6.25.0 for
+# the vertex defense provider (dolza-vertex judges on Vertex AI).
 Image=quay.io/crunchtools/trentina:6.25.0
 ContainerName=trentina
-# A FIXED address (a813). The seats write it into gatehouse.env as a literal
-# at start (Gatehouse takes plain http only to a literal private address,
-# developer#89), so an address that moved on every restart broke every
-# seat's pre-push gate until that seat restarted too.
+# A FIXED address (a813). gatehouse.env names it as a literal (Gatehouse takes
+# plain http only to a literal private address, developer#89), so an address
+# that moved on a restart broke every seat's pre-push gate. It sits below the
+# network's dynamic lease range (lease_range 10.89.0.100-.254 in podman's
+# crunchtools.json), so no other container can be handed it.
 Network=crunchtools:ip=10.89.0.55
 PublishPort=127.0.0.1:8019:8019
 # The redhat-hub backend's auth.callback_url is

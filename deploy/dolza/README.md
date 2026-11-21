@@ -34,9 +34,14 @@ live files are the ones that run; when one changes, update the copy here too.
   host user before its first start, for the same reason as Vertex.
 - `trentina.container`: Dolza's own gateway, which every member reaches as
   `trentina` on the `crunchtools` network. Its address is pinned
-  (`ip=10.89.0.55`): the seats write that literal into `gatehouse.env` at start
-  (crunchtools/developer#89), so an address that moves on a gateway restart
-  breaks every seat's pre-push Gatehouse until the seat restarts. Its
+  (`ip=10.89.0.55`) because `gatehouse.env` names it as a literal
+  (crunchtools/developer#89), and an address that moves on a gateway restart
+  breaks every seat's pre-push Gatehouse. The network was created by hand, not
+  by a quadlet, so its dynamic range lives in podman's
+  `~/.local/share/containers/storage/networks/crunchtools.json`:
+  `lease_range` 10.89.0.100-10.89.0.254. Pinned addresses (.20, .55) sit below
+  it, so no other container can be handed one. Recreating the network must keep
+  it (`podman network create --ip-range 10.89.0.100-10.89.0.254 ...`). Its
   `profiles.yaml` is live state the gateway's config tool rewrites, so it is
   not copied here. The seats' own profile, `dolza-vertex`, holds no
   `openrouter-gatehouse` key: a Vertex seat holds Red Hat content, and with
