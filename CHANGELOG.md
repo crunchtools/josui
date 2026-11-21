@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `deploy/breetai/trentina.container`: Breetai's gateway quadlet, its address on
+  `crunchtools` pinned to `10.89.0.55` as Dolza's is, so a gateway restart no longer
+  strands the vertex seats' `gatehouse.env` on the old address (a868).
+
 ### Changed
 - Gatehouse triage gets `review_result`, so a PR whose review job died before posting anything is held instead of passing.
 - The Dolza seats see Scott's pCloud Downloads, Documents and Screenshots folders live
