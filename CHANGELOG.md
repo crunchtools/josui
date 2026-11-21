@@ -12,6 +12,9 @@ All notable changes to this project are documented here. The format follows
   strands the vertex seats' `gatehouse.env` on the old address (a868).
 
 ### Changed
+- Dolza's `dolza-vertex` gateway profile writes memories only to the Red Hat work
+  store: it gains the `memory-work` backend, and its `gloval` backend denies
+  `memory_store` and `memory_update` (a887, RT#1655).
 - Gatehouse triage gets `review_result`, so a PR whose review job died before posting anything is held instead of passing.
 - The Dolza seats see Scott's pCloud Downloads, Documents and Screenshots folders live
   and read-write through bindfs (`tools/pcloud-seats`, drop-in

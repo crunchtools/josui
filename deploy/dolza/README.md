@@ -26,7 +26,12 @@ live files are the ones that run; when one changes, update the copy here too.
   `podman exec -it vertexN tmux attach -t dev`. It needs
   `~/Projects/dolza-services/vertexN/data/state/.claude` to exist and be owned by the host user
   before its first start. Otherwise podman creates that directory as root when
-  it mounts the sessions directory inside it.
+  it mounts the sessions directory inside it. Its gateway profile,
+  `dolza-vertex`, writes memories only to the Red Hat work store
+  (`memory-work`, served as `enclave_memory_store` and `enclave_memory_update`).
+  Its `gloval` backend denies `memory_store` and `memory_update`, so nothing on a
+  Vertex seat reaches Gloval's shared store, though search and delete still
+  work there (a887). The profile is live state, not copied here.
 - `dmax@.container`: Max worker N (`dmax@1` … `dmax@4`, named `Dolza N - Max`).
   The same worker as Vertex, plus `JOSUI_RC=1`, which puts its conversation on
   Remote Control too. Attach with `podman exec -it dmaxN tmux attach -t dev`. It needs
