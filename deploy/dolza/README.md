@@ -32,6 +32,34 @@ live files are the ones that run; when one changes, update the copy here too.
   Remote Control too. Attach with `podman exec -it dmaxN tmux attach -t dev`. It needs
   `~/Projects/dolza-services/dmaxN/data/state/.claude` to exist and be owned by the
   host user before its first start, for the same reason as Vertex.
+- `trentina.container`: Dolza's own gateway, which every member reaches as
+  `trentina` on the `crunchtools` network. Its address is pinned
+  (`ip=10.89.0.55`) because `gatehouse.env` names it as a literal
+  (crunchtools/developer#89), and an address that moves on a gateway restart
+  breaks every seat's pre-push Gatehouse. The network was created by hand, not
+  by a quadlet, so its dynamic range lives in podman's
+  `~/.local/share/containers/storage/networks/crunchtools.json`:
+  `lease_range` 10.89.0.100-10.89.0.254. Pinned addresses (.20, .55) sit below
+  it, so no other container can be handed one. Recreating the network must keep
+  it (`podman network create --ip-range 10.89.0.100-10.89.0.254 ...`). Its
+  `profiles.yaml` is live state the gateway's config tool rewrites, so it is
+  not copied here. The seats' own profile, `dolza-vertex`, holds no
+  `openrouter-gatehouse` key: a Vertex seat holds Red Hat content, and with
+  that key its token would carry anything on the seat to OpenRouter.
+- `vertex@.container.d/gatehouse.conf`: the Vertex seats' `gatehouse.env`,
+  Gatehouse's own gateway token (profile `dolza-gatehouse`) instead of the
+  seat's. That profile has no tools, no `git` route and no `/proxy/llm` route;
+  its one way out is the guarded egress route
+  `/proxy/http/openrouter-gatehouse`, under block, with a semantic request
+  guard that refuses Red Hat content. The token is a file any process on the
+  seat can read, so it is not a boundary by itself; the gateway guard is.
+  Delivered from OpenBao `kv dolza/gatehouse-vertex/gatehouse.env` by
+  `srv-secrets@gatehouse-vertex`, mounted at `/etc/josui/mcp-env/gatehouse.env`
+  (developer-entrypoint prefers a mounted file); the mountpoint
+  `~/Projects/dolza-services/agents/developer-identity/mcp-env` must exist,
+  empty. Known gap (a813): Trentina 6.25.0's L2 classifier flags Gatehouse's
+  own review prompts, so under block this route currently refuses every
+  review and Vertex-seat pushes stop at the Gatehouse gate.
 - `pcloud.conf`, with `tools/pcloud-seats/pcloud-seats@.service` (user unit,
   `~/.config/systemd/user/`, enabled as `pcloud-seats@Downloads`, `pcloud-seats@Documents` and
   `pcloud-seats@Autosync-Screenshots`), the drop-in on each container: those three pCloud folders, live and
