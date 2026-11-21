@@ -1,0 +1,72 @@
+[Unit]
+Requires=srv-secrets@trentina.service
+After=srv-secrets@trentina.service
+Description=Trentina security gateway (breetai local — Red Hat enclave)
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+# Pinned, NOT `:latest`. The reason has changed but the rule has not.
+# Originally pinned because `:latest` was 6.11.0, which had no release tag and
+# OOM-killed gloval's gateway on 2026-11-07 (RT#1559). 6.13.1, 6.13.2, 6.14.0,
+# 6.15.0 and 6.16.0 have since superseded it, so the "unpin once a release
+# supersedes it" condition is met -- but an explicit pin is kept rather than
+# returning to `:latest`, because the lesson of #1559 is that a laptop restart
+# must not be able to silently pull a future bad build. 6.17.0 is what gloval
+# runs (session adoption, #775 / PR #777); breetai bumped to match 2026-11-10.
+# 2026-11-20: bumped to 6.25.0 to match Dolza -- 6.24+ forwards federated OAuth
+# backends (gw-personal/gws-redhat) to peers, and 6.25.0 adds the `vertex`
+# defense provider. Pin tracks Dolza, not :latest.
+Image=quay.io/crunchtools/trentina:6.25.0
+ContainerName=trentina
+# A FIXED address (a868, as Dolza's a813). The vertex seats write it into
+# gatehouse.env as a literal at start (Gatehouse takes plain http only to a
+# literal private address, developer#89), so an address that moved on every
+# restart broke every seat's pre-push gate until that seat restarted too, and
+# sent its gateway token to whatever container got the old address next.
+Network=crunchtools:ip=10.89.0.55
+PublishPort=127.0.0.1:8019:8019
+# The redhat-hub backend's auth.callback_url is
+# http://127.0.0.1:8787/oauth/callback (#725): the gateway serves that PATH on
+# 8019, so 8787 is published onto it. Loopback only.
+PublishPort=127.0.0.1:8787:8019
+EnvironmentFile=%t/srv-secrets/trentina/trentina.env.split
+Environment=QUARANTINE_TRUST_CONFIG=/config/trentina-trust.json
+Environment=MEMORY_WORK_API_KEY_FILE=/run/secrets/memory-work-api-key
+# Vertex L3 judge for the breetai-vertex profile (matches Dolza): Scott's Red
+# Hat GCP ADC, from OpenBao kv breetai/trentina/vertex-adc.json via /run/secrets.
+# Re-store it there if `gcloud auth application-default login` is ever re-run.
+Environment=VERTEX_ADC_FILE=/run/secrets/vertex-adc.json
+Volume=%h/srv/trentina/config:/config:ro,Z
+# host-ca.pem still comes from config/ (it is a public CA bundle). The trust
+# allowlist is a secret and now comes from the store, mounted over the path
+# QUARANTINE_TRUST_CONFIG already points at, so no variable has to change.
+Volume=%t/srv-secrets/trentina/trentina-trust.json:/config/trentina-trust.json:ro,Z
+# profiles.yaml in a directory of its OWN, writable, so config_tool can edit
+# it (#633). A directory and not the file, because an atomic replace renames
+# over it and a rename needs the directory - which is the point of the
+# separate mount: the writable surface holds one file instead of every secret
+# and policy file beside it. TRENTINA_REQUIRE_HARDENED still passes; its
+# checks are statvfs("/") and the import path.
+Volume=%h/srv/trentina/live:/live:Z
+Volume=%h/srv/trentina/data:/data:Z
+Volume=%t/srv-secrets/trentina:/run/secrets:ro,Z
+# The two profile bearer tokens arrive as FILES, not environment values: an
+# env value stays readable through the process environment, a file does not
+# (trentina#767). srv-secrets splits them out per secrets.split and rewrites
+# them as *_FILE in the env file above. /health counts what is left inline.
+Volume=%t/srv-secrets/trentina/trentina.env.files:/run/trentina-secrets:ro,Z
+Tmpfs=/tmp:rw,nosuid,size=512m
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=all
+UserNS=keep-id:uid=65532,gid=65532
+Exec=--transport streamable-http --host 0.0.0.0 --port 8019
+
+[Service]
+Restart=always
+RestartSec=10
+TimeoutStartSec=900
+
+[Install]
+WantedBy=default.target
