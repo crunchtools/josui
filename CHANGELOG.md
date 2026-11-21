@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- `deploy/dolza/trentina.container`: a copy of Dolza's gateway quadlet, now with a pinned bridge address so the seats' baked `gatehouse.env` survives a gateway restart.
 - Gatehouse triage gets `review_result`, so a PR whose review job died before posting anything is held instead of passing.
 - The Dolza seats see Scott's pCloud Downloads, Documents and Screenshots folders live
   and read-write through bindfs (`tools/pcloud-seats`, drop-in

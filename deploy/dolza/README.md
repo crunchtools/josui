@@ -32,6 +32,13 @@ live files are the ones that run; when one changes, update the copy here too.
   Remote Control too. Attach with `podman exec -it dmaxN tmux attach -t dev`. It needs
   `~/Projects/dolza-services/dmaxN/data/state/.claude` to exist and be owned by the
   host user before its first start, for the same reason as Vertex.
+- `trentina.container`: Dolza's own gateway, which every member reaches as
+  `trentina` on the `crunchtools` network. Its address is pinned
+  (`ip=10.89.0.55`): the seats write that literal into `gatehouse.env` at start
+  (crunchtools/developer#89), so an address that moves on a gateway restart
+  breaks every seat's pre-push Gatehouse until the seat restarts. Its
+  `profiles.yaml` is live state the gateway's config tool rewrites, so it is
+  not copied here.
 - `pcloud.conf`, with `tools/pcloud-seats/pcloud-seats@.service` (user unit,
   `~/.config/systemd/user/`, enabled as `pcloud-seats@Downloads`, `pcloud-seats@Documents` and
   `pcloud-seats@Autosync-Screenshots`), the drop-in on each container: those three pCloud folders, live and
