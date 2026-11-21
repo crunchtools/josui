@@ -41,6 +41,14 @@ live files are the ones that run; when one changes, update the copy here too.
   not copied here. The seats' own profile, `dolza-vertex`, holds no
   `openrouter-gatehouse` key: a Vertex seat holds Red Hat content, and with
   that key its token would carry anything on the seat to OpenRouter.
+- `vertex@.container.d/gatehouse.conf`: the Vertex seats' Gatehouse runs on its
+  own gateway profile, `dolza-gatehouse`. That profile has no backends, no
+  `git` block and one usable route, `/proxy/llm/openrouter-gatehouse`. Its token
+  sits in OpenBao `kv dolza/gatehouse-vertex/gatehouse.env` beside the pinned
+  URL, reaches the seat through `srv-secrets@gatehouse-vertex`, and is mounted
+  at `/etc/josui/mcp-env/gatehouse.env`, which developer-entrypoint prefers over
+  writing one from the seat token. The mountpoint needs
+  `~/Projects/dolza-services/agents/developer-identity/mcp-env` to exist, empty.
 - `pcloud.conf`, with `tools/pcloud-seats/pcloud-seats@.service` (user unit,
   `~/.config/systemd/user/`, enabled as `pcloud-seats@Downloads`, `pcloud-seats@Documents` and
   `pcloud-seats@Autosync-Screenshots`), the drop-in on each container: those three pCloud folders, live and
