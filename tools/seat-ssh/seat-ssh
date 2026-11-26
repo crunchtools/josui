@@ -1,26 +1,34 @@
 #!/bin/bash
-# seat-ssh -- grant or revoke a Dolza admin seat's ssh key on every host
-# (developer constitution 3.0.0). Run on Dolza, as Scott, with Scott's own ssh
-# access to the hosts.
+# seat-ssh -- grant or revoke a seat's ssh key on every host (developer
+# constitution 3.0.0; a1753: sixteen seats, one key pair each). Run on Dolza,
+# as Scott, with Scott's own ssh access to the hosts.
 #
 #   seat-ssh grant [seat ...]    install (or replace) each seat's line
 #   seat-ssh revoke seat ...     remove each seat's line everywhere
 #   seat-ssh list                show which seats each host accepts
 #
-# A seat's line is tagged with the comment dolza-<seat>, accepted only from
-# Dolza's overlay address, and carries no agent or X11 forwarding. Granting
-# twice changes nothing; granting after a key rotation replaces the line. A
-# host that cannot be reached is reported and skipped; run again when it is up.
+# Seats: dmax1-4 and vertex1-4 (Dolza), max1-4 (Exedore), bmax1-2 and
+# bvertex1-2 (breetai), plus Prime (josui). A seat's line is tagged with its
+# key comment <host>-<seat> (dolza-dmax1, exedore-max3, breetai-bvertex2).
+# Every seat key is root on gloval and exedore; a Vertex-billing seat (vertex,
+# bvertex) is also smccarty on dolza and breetai. Each line is
+# `from="<pin>",restrict,pty`: <pin> is where that seat's ssh arrives from as
+# the target sees it (ssh-from.tsv in crunchtools/seat-fence), no port, agent
+# or X11 forwarding, a pty for interactive work. Prime keeps its own
+# options (no agent or X11 forwarding) and goes to gloval, exedore and dolza,
+# never breetai. Granting
+# twice changes nothing; granting after a key rotation replaces the line; a
+# grant on a host the seat does not belong on removes its line there. A host
+# that cannot be reached is reported and skipped; run again when it is up.
 #
 #   SEAT_SSH_PUBKEYS  directory of <seat>.pub (default
 #                     ~/Projects/dolza-services/agents-ssh/pubkeys)
-#   SEAT_SSH_FROM     source address the hosts see (default 10.44.0.20)
 #   SEAT_SSH_HOSTS    newline-separated name|how|file entries replacing the
-#                     four hosts below (how is an ssh command, or "local")
+#                     four hosts below (how is an ssh command, or "local");
+#                     names must be gloval, exedore, breetai, dolza
 set -uo pipefail
 
 pubkeys=${SEAT_SSH_PUBKEYS:-$HOME/Projects/dolza-services/agents-ssh/pubkeys}
-from=${SEAT_SSH_FROM:-10.44.0.20}
 # host  how Scott reaches it  whose authorized_keys
 if [ -n "${SEAT_SSH_HOSTS:-}" ]; then
   mapfile -t hosts <<< "$SEAT_SSH_HOSTS"
@@ -41,24 +49,65 @@ seat-ssh revoke seat ...     remove each seat's line everywhere
 seat-ssh list                show which seats each host accepts
 USAGE
 }
-# Everything that lands in an authorized_keys line is checked first: an
-# address (or CIDR), a key type, and base64 -- nothing that could carry a
-# quote, comma or newline into the options.
-valid_from() {
-  local addr=${1%/*} prefix octet
-  [[ $1 =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}(/[0-9]{1,2})?$ ]] || return 1
-  for octet in ${addr//./ }; do [ "$((10#$octet))" -le 255 ] || return 1; done
-  if [[ $1 == */* ]]; then prefix=${1#*/}; [ "$((10#$prefix))" -le 32 ] || return 1; fi
+# Which host a seat runs on, and its billing: seats.tsv in crunchtools/seat-fence.
+seat_host() {
+  case $1 in
+    josui | dmax[1-4] | vertex[1-4]) echo dolza ;;
+    max[1-4]) echo exedore ;;
+    bmax[1-2] | bvertex[1-2]) echo breetai ;;
+    *) return 1 ;;
+  esac
 }
-valid_from "$from" || die "SEAT_SSH_FROM is not an IPv4 address or CIDR: $from"
-valid_seat() { [[ $1 =~ ^[a-z][a-z0-9-]*$ ]] || die "not a seat name: $1"; }
+# Where a seat's ssh arrives from at a target (ssh-from.tsv). Prime is the
+# Dolza row everywhere.
+pin() {   # pin <seat-host> <target>
+  case $1:$2 in
+    dolza:exedore) echo 10.44.0.20,10.99.0.1 ;;
+    dolza:*) echo 10.44.0.20 ;;
+    breetai:*) echo 10.44.0.10 ;;
+    exedore:gloval) echo 10.44.0.24 ;;
+    exedore:exedore) echo 10.88.0.0/16 ;;
+    *) return 1 ;;
+  esac
+}
+# Does <target> carry <seat>'s key? Everyone is on gloval and exedore;
+# dolza takes Prime and the Vertex-billing seats, breetai only the Vertex-billing
+# seats (README S3: Prime's key is off breetai).
+belongs() {
+  case $2 in
+    gloval | exedore) return 0 ;;
+    dolza) [[ $1 == josui || $1 == vertex* || $1 == bvertex* ]] ;;
+    breetai) [[ $1 == vertex* || $1 == bvertex* ]] ;;   # Prime's key stays off Scott's laptop
+    *) return 1 ;;
+  esac
+}
+tag_of() { echo "$(seat_host "$1")-$1"; }
+# Old comments a grant also clears for this seat: breetai's vertexN@breetai
+# and breetai-vertexN (the pre-a1753 tags there).
+legacy_of() { case $1 in vertex[1-4]) echo "$1@breetai breetai-$1" ;; esac; }
+
+die() { echo "seat-ssh: $*" >&2; exit 1; }
+usage() {
+  cat <<'USAGE'
+seat-ssh grant [seat ...]    install (or replace) each seat's line
+seat-ssh revoke seat ...     remove each seat's line everywhere
+seat-ssh list                show which seats each host accepts
+USAGE
+}
+# Everything that lands in an authorized_keys line is checked first: a key
+# type and base64 -- nothing that could carry a quote, comma or newline into
+# the options. The from= pins above are constants.
+valid_seat() {
+  [[ $1 =~ ^[a-z][a-z0-9-]*$ ]] || die "not a seat name: $1"
+  seat_host "$1" > /dev/null || die "unknown seat: $1"
+}
 
 # The edit, run on the target with the file name as $1: drop the tagged lines
-# read from stdin's first line (space-separated seats), then append the rest.
+# read from stdin's first line (space-separated tags), then append the rest.
 EDIT='f=$1; mkdir -p "$(dirname "$f")"; chmod 700 "$(dirname "$f")"; touch "$f"; chmod 600 "$f"
 if ! [ -f "$f" ] || ! [ -r "$f" ]; then echo "$f is not a readable file" >&2; exit 1; fi
-read -r seats; tmp=$(mktemp "$f.XXXXXX")
-pattern=$(printf " dolza-%s\$|" $seats); pattern=${pattern%|}
+read -r tags; tmp=$(mktemp "$f.XXXXXX")
+pattern=$(printf " %s\$|" $tags); pattern=${pattern%|}
 grep -vE "$pattern" "$f" > "$tmp"; rc=$?
 # grep: 1 is "nothing left after the filter", 2 is a read error -- never
 # replace the file with a partial copy.
@@ -66,16 +115,27 @@ if [ $rc -gt 1 ]; then rm -f "$tmp"; echo "cannot read $f" >&2; exit 1; fi
 cat >> "$tmp"
 mv "$tmp" "$f"; chmod 600 "$f"; restorecon "$f" >/dev/null 2>&1 || true'
 
-apply() {   # apply <seats> <lines>
-  local seats=$1 lines=$2 entry name how file rc=0 edit64
+# apply <seats> <grant|revoke>: per host, clear each seat's tags, and for a
+# grant write the lines of the seats that belong on that host.
+apply() {
+  local seats=$1 mode=$2 entry name how file rc=0 edit64 seat tags hl type key opts
   edit64=$(printf '%s' "$EDIT" | base64 -w0)
   for entry in "${hosts[@]}"; do
     IFS='|' read -r name how file <<< "$entry"
+    tags='' hl=''
+    for seat in $seats; do
+      tags+=" $(tag_of "$seat") $(legacy_of "$seat")"
+      [ "$mode" = grant ] && belongs "$seat" "$name" || continue
+      read -r type key _ < "$pubkeys/$seat.pub"
+      if [ "$seat" = josui ]; then opts="from=\"$(pin dolza "$name")\",no-agent-forwarding,no-X11-forwarding"
+      else opts="from=\"$(pin "$(seat_host "$seat")" "$name")\",restrict,pty"; fi
+      hl+="$opts $type $key $(tag_of "$seat")"$'\n'
+    done
     if [ "$how" = local ]; then
-      printf '%s\n%s' "$seats" "$lines" | bash -c "$EDIT" _ "$file" || { echo "$name: FAILED"; rc=1; continue; }
+      printf '%s\n%s' "$tags" "$hl" | bash -c "$EDIT" _ "$file" || { echo "$name: FAILED"; rc=1; continue; }
     else
       # The edit travels as base64, so no quoting survives two shells.
-      printf '%s\n%s' "$seats" "$lines" | $how "bash -c \"\$(echo $edit64 | base64 -d)\" _ $file" \
+      printf '%s\n%s' "$tags" "$hl" | $how "bash -c \"\$(echo $edit64 | base64 -d)\" _ $file" \
         || { echo "$name: unreachable or failed, skipped (run again when it is up)"; rc=1; continue; }
     fi
     echo "$name: done"
@@ -87,29 +147,30 @@ cmd=${1:-}; shift || true
 case "$cmd" in
   grant)
     [ $# -gt 0 ] || set -- $(cd "$pubkeys" && ls *.pub | sed 's/\.pub$//')
-    lines=
     for seat; do
       valid_seat "$seat"
       [ -s "$pubkeys/$seat.pub" ] || die "no public key at $pubkeys/$seat.pub"
-      read -r type key _ < "$pubkeys/$seat.pub"
+      read -r type key comment < "$pubkeys/$seat.pub"
       [[ $type =~ ^(ssh-ed25519|ecdsa-sha2-nistp(256|384|521)|ssh-rsa)$ ]] || die "$seat.pub: unexpected key type"
       [[ $key =~ ^[A-Za-z0-9+/]+=*$ ]] || die "$seat.pub: key is not base64"
       # The character class is a first pass; ssh-keygen parses the key itself.
       ssh-keygen -l -f <(printf '%s %s\n' "$type" "$key") > /dev/null 2>&1 \
         || die "$seat.pub: not a valid $type public key"
-      lines+="from=\"$from\",no-agent-forwarding,no-X11-forwarding $type $key dolza-$seat"$'\n'
+      [ "$seat" = josui ] || [ "$comment" = "$(tag_of "$seat")" ] \
+        || die "$seat.pub: comment is '$comment', want '$(tag_of "$seat")'"
     done
-    apply "$*" "$lines" ;;
+    apply "$*" grant ;;
   revoke)
     [ $# -gt 0 ] || die "revoke needs at least one seat"
     for seat; do valid_seat "$seat"; done
-    apply "$*" "" ;;
+    apply "$*" revoke ;;
   list)
     for entry in "${hosts[@]}"; do
       IFS='|' read -r name how file <<< "$entry"
-      if [ "$how" = local ]; then out=$(grep -oE ' dolza-[a-z0-9-]+$' "$file" 2>/dev/null)
-      else out=$($how "grep -oE ' dolza-[a-z0-9-]+\$' $file" 2>/dev/null) || { echo "$name: unreachable"; continue; }; fi
-      echo "$name:$(echo $out | sed 's/dolza-//g')"
+      re=' (dolza|exedore|breetai)-[a-z0-9-]+$'
+      if [ "$how" = local ]; then out=$(grep -oE "$re" "$file" 2>/dev/null)
+      else out=$($how "grep -oE '$re' $file" 2>/dev/null) || { echo "$name: unreachable"; continue; }; fi
+      echo "$name:$(echo $out | sed -E 's/(dolza|exedore|breetai)-//g')"
     done ;;
   *) usage; exit 2 ;;
 esac
