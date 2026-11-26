@@ -4,12 +4,35 @@ from __future__ import annotations
 
 import os
 import pty
+import re
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parent.parent / "tools/seat-ssh/seat-ssh"
+
+
+HOSTS = ("gloval", "exedore", "breetai", "dolza")
+TAGS = {
+    "dmax1": "dolza-dmax1",
+    "vertex1": "dolza-vertex1",
+    "max1": "exedore-max1",
+    "bmax1": "breetai-bmax1",
+    "bvertex1": "breetai-bvertex1",
+}
+FROM = {  # (seat host, target) -> from=, as ssh-from.tsv
+    ("dolza", "gloval"): "10.44.0.20",
+    ("dolza", "exedore"): "10.44.0.20,10.99.0.1",
+    ("dolza", "dolza"): "10.44.0.20",
+    ("dolza", "breetai"): "10.44.0.20",
+    ("breetai", "gloval"): "10.44.0.10",
+    ("breetai", "exedore"): "10.44.0.10",
+    ("breetai", "dolza"): "10.44.0.10",
+    ("breetai", "breetai"): "10.44.0.10",
+    ("exedore", "gloval"): "10.44.0.24",
+    ("exedore", "exedore"): "10.88.0.0/16",
+}
 
 
 class SeatSshTest(unittest.TestCase):
@@ -19,31 +42,28 @@ class SeatSshTest(unittest.TestCase):
         root = Path(tmp.name)
         self.pubkeys = root / "pubkeys"
         self.pubkeys.mkdir()
-        self.keys = {}
-        for seat in ("dmax1", "dmax2"):
-            subprocess.run(
-                [
-                    "ssh-keygen",
-                    "-q",
-                    "-t",
-                    "ed25519",
-                    "-N",
-                    "",
-                    "-C",
-                    f"dolza-{seat}",
-                    "-f",
-                    str(root / seat),
-                ],
-                check=True,
-            )
-            self.keys[seat] = (root / f"{seat}.pub").read_text().split()[1]
-            (root / f"{seat}.pub").rename(self.pubkeys / f"{seat}.pub")
-        self.local = root / "local/authorized_keys"
-        self.remote = root / "remote/authorized_keys"
-        self.remote.parent.mkdir()
-        self.remote.write_text("ssh-ed25519 SCOTT scott@breetai\n")
-        # "remote" goes through a shell exactly as ssh would hand it one string.
-        self.hosts = f"local|local|{self.local}\nremote|bash -c|{self.remote}"
+        self.keys: dict[str, str] = {}
+        for seat, tag in {**TAGS, "josui": "dolza-josui"}.items():
+            self.keygen(root, seat, tag)
+        self.files = {host: root / host / "authorized_keys" for host in HOSTS}
+        for host in HOSTS:
+            self.files[host].parent.mkdir()
+        for host in ("exedore", "dolza"):
+            self.files[host].write_text("ssh-ed25519 SCOTT scott@breetai\n")
+        # gloval and exedore go through a shell exactly as ssh would hand it
+        # one string; breetai and dolza are local files.
+        self.hosts = "\n".join(
+            f"{host}|{'bash -c' if host in ('gloval', 'exedore') else 'local'}|{path}"
+            for host, path in self.files.items()
+        )
+        self.root = root
+
+    def keygen(self, root: Path, seat: str, tag: str) -> None:
+        subprocess.run(
+            ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", tag, "-f", str(root / seat)], check=True
+        )
+        self.keys[seat] = (root / f"{seat}.pub").read_text().split()[1]
+        (root / f"{seat}.pub").rename(self.pubkeys / f"{seat}.pub")
 
     def run_tool(self, *args: str, hosts: str | None = None) -> subprocess.CompletedProcess[str]:
         env = {**os.environ, "SEAT_SSH_PUBKEYS": str(self.pubkeys), "SEAT_SSH_HOSTS": hosts or self.hosts}
@@ -51,88 +71,105 @@ class SeatSshTest(unittest.TestCase):
             ["bash", str(SCRIPT), *args], env=env, capture_output=True, text=True, check=False
         )
 
-    def test_grant_writes_one_restricted_tagged_line_per_seat_everywhere(self) -> None:
+    def seat_lines(self, host: str) -> list[str]:
+        text = self.files[host].read_text()
+        return sorted(x for x in text.splitlines() if re.search(r" (dolza|exedore|breetai)-\S+$", x))
+
+    def line(self, seat: str, target: str) -> str:
+        host = TAGS[seat].split("-")[0]
+        return f'from="{FROM[(host, target)]}",restrict,pty ssh-ed25519 {self.keys[seat]} {TAGS[seat]}'
+
+    def test_every_seat_is_root_on_gloval_and_exedore_with_its_own_pin(self) -> None:
         result = self.run_tool("grant")
         self.assertEqual(result.returncode, 0, result.stderr)
-        for path in (self.local, self.remote):
-            lines = [line for line in path.read_text().splitlines() if "dolza-" in line]
-            options = 'from="10.44.0.20",no-agent-forwarding,no-X11-forwarding'
-            self.assertEqual(
-                lines,
-                [
-                    f"{options} ssh-ed25519 {self.keys['dmax1']} dolza-dmax1",
-                    f"{options} ssh-ed25519 {self.keys['dmax2']} dolza-dmax2",
-                ],
-            )
-            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
-        self.assertIn("SCOTT scott@breetai", self.remote.read_text())
+        for host in ("gloval", "exedore"):
+            with self.subTest(host=host):
+                want = sorted(self.line(seat, host) for seat in TAGS)
+                got = [x for x in self.seat_lines(host) if "dolza-josui" not in x]
+                self.assertEqual(got, want)
+                self.assertEqual(self.files[host].stat().st_mode & 0o777, 0o600)
+        self.assertIn("SCOTT scott@breetai", self.files["exedore"].read_text())
+
+    def test_only_vertex_billing_seats_and_prime_reach_dolza_and_breetai(self) -> None:
+        self.run_tool("grant")
+        for host in ("dolza", "breetai"):
+            with self.subTest(host=host):
+                got = [x for x in self.seat_lines(host) if "-josui" not in x]
+                self.assertEqual(got, sorted(self.line(seat, host) for seat in ("vertex1", "bvertex1")))
+        for host in ("gloval", "exedore", "dolza"):
+            with self.subTest(host=host):
+                prime_line = (
+                    f'from="{FROM[("dolza", host)]}",no-agent-forwarding,no-X11-forwarding'
+                    f" ssh-ed25519 {self.keys['josui']} dolza-josui"
+                )
+                self.assertIn(prime_line, self.seat_lines(host))
+        self.assertNotIn("dolza-josui", self.files["breetai"].read_text())
+
+    def test_a_grant_takes_prime_off_breetai_if_it_is_there(self) -> None:
+        self.files["breetai"].write_text("ssh-ed25519 OLD dolza-josui\nssh-ed25519 SCOTT scott@x\n")
+        self.run_tool("grant")
+        text = self.files["breetai"].read_text()
+        self.assertNotIn("dolza-josui", text)
+        self.assertIn("SCOTT", text)
+
+    def test_a_max_seat_grant_removes_the_line_dolza_should_not_have(self) -> None:
+        self.files["dolza"].write_text('from="10.44.0.20",restrict ssh-ed25519 OLD dolza-dmax1\n')
+        result = self.run_tool("grant", "dmax1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("dolza-dmax1", self.files["dolza"].read_text())
+        self.assertIn("dolza-dmax1", self.files["gloval"].read_text())
+
+    def test_the_old_breetai_vertex_comment_is_cleared_by_a_grant(self) -> None:
+        self.files["breetai"].write_text(
+            "ssh-ed25519 OLD vertex1@breetai\nssh-ed25519 OLD2 breetai-vertex1\nssh-ed25519 SCOTT scott@x\n"
+        )
+        self.run_tool("grant", "vertex1")
+        text = self.files["breetai"].read_text()
+        self.assertNotIn("vertex1@breetai", text)
+        self.assertNotIn("breetai-vertex1", text)
+        self.assertIn("SCOTT", text)
+        self.assertIn("dolza-vertex1", text)
 
     def test_granting_twice_or_after_a_rotation_keeps_one_line(self) -> None:
         self.run_tool("grant")
         old = self.keys["dmax1"]
         (self.pubkeys / "dmax1.pub").unlink()
-        rotated = self.pubkeys.parent / "rotated"
-        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(rotated)], check=True)
-        new = (self.pubkeys.parent / "rotated.pub").read_text().split()[1]
-        (self.pubkeys.parent / "rotated.pub").rename(self.pubkeys / "dmax1.pub")
+        (self.root / "dmax1").unlink()
+        self.keygen(self.root, "dmax1", "dolza-dmax1")
         self.run_tool("grant")
-        text = self.remote.read_text()
+        text = self.files["gloval"].read_text()
         self.assertEqual(text.count("dolza-dmax1"), 1)
-        self.assertIn(new, text)
+        self.assertIn(self.keys["dmax1"], text)
         self.assertNotIn(old, text)
 
     def test_revoke_removes_only_that_seat(self) -> None:
         self.run_tool("grant")
-        result = self.run_tool("revoke", "dmax1")
+        result = self.run_tool("revoke", "vertex1")
         self.assertEqual(result.returncode, 0, result.stderr)
-        for path in (self.local, self.remote):
-            text = path.read_text()
-            self.assertNotIn("dolza-dmax1", text)
-            self.assertIn("dolza-dmax2", text)
-        self.assertIn("SCOTT scott@breetai", self.remote.read_text())
+        for host in HOSTS:
+            text = self.files[host].read_text()
+            self.assertNotIn("dolza-vertex1", text)
+        self.assertIn("dolza-dmax1", self.files["gloval"].read_text())
+        self.assertIn("breetai-bvertex1", self.files["breetai"].read_text())
+        self.assertIn("SCOTT scott@breetai", self.files["exedore"].read_text())
 
     def test_an_unreachable_host_is_reported_and_the_rest_still_done(self) -> None:
-        result = self.run_tool("grant", hosts=f"down|false|/nowhere\nlocal|local|{self.local}")
+        result = self.run_tool("grant", hosts=f"gloval|false|/nowhere\nbreetai|local|{self.files['breetai']}")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("down: unreachable", result.stdout)
-        self.assertIn("dolza-dmax1", self.local.read_text())
+        self.assertIn("gloval: unreachable", result.stdout)
+        self.assertIn("breetai-bvertex1", self.files["breetai"].read_text())
 
-    def test_a_from_address_that_is_not_an_address_is_refused(self) -> None:
-        env_hosts = self.hosts
-        result = subprocess.run(
-            ["bash", str(SCRIPT), "grant"],
-            env={
-                **os.environ,
-                "SEAT_SSH_PUBKEYS": str(self.pubkeys),
-                "SEAT_SSH_HOSTS": env_hosts,
-                "SEAT_SSH_FROM": '10.44.0.20",command="sh',
-            },
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+    def test_a_comment_that_is_not_the_seats_tag_is_refused(self) -> None:
+        (self.pubkeys / "max1.pub").write_text(f"ssh-ed25519 {self.keys['max1']} dolza-max1\n")
+        result = self.run_tool("grant", "max1")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("not an IPv4 address", result.stderr)
-        self.assertFalse(self.local.exists())
+        self.assertIn("want 'exedore-max1'", result.stderr)
+        self.assertFalse(self.files["gloval"].exists())
 
-    def run_from(self, value: str) -> subprocess.CompletedProcess[str]:
-        env = {
-            **os.environ,
-            "SEAT_SSH_PUBKEYS": str(self.pubkeys),
-            "SEAT_SSH_HOSTS": self.hosts,
-            "SEAT_SSH_FROM": value,
-        }
-        return subprocess.run(
-            ["bash", str(SCRIPT), "grant"], env=env, capture_output=True, text=True, check=False
-        )
-
-    def test_address_bounds(self) -> None:
-        for bad in ("256.0.0.1", "10.44.0.300", "10.44.0.0/33", "10.44.0", "10.44.0.20/"):
-            with self.subTest(bad=bad):
-                self.assertIn("not an IPv4 address", self.run_from(bad).stderr)
-        for good in ("255.255.255.255", "10.44.0.0/32", "10.44.0.0/0", "0.0.0.0"):
-            with self.subTest(good=good):
-                self.assertEqual(self.run_from(good).returncode, 0, good)
+    def test_an_unknown_seat_is_refused(self) -> None:
+        result = self.run_tool("revoke", "vertex9")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unknown seat", result.stderr)
 
     def test_an_unsupported_key_type_is_refused(self) -> None:
         (self.pubkeys / "dmax1.pub").write_text(f"ssh-dss {self.keys['dmax1']} dolza-dmax1\n")
@@ -147,8 +184,7 @@ class SeatSshTest(unittest.TestCase):
         self.assertIn("not a valid ssh-ed25519 public key", result.stderr)
 
     def test_a_filter_failure_leaves_the_file_alone(self) -> None:
-        self.remote.write_text("ssh-ed25519 SCOTT scott@breetai\n")
-        fake = self.pubkeys.parent / "fakebin"
+        fake = self.root / "fakebin"
         fake.mkdir()
         (fake / "grep").write_text("#!/bin/sh\nexit 2\n")
         (fake / "grep").chmod(0o755)
@@ -156,17 +192,16 @@ class SeatSshTest(unittest.TestCase):
             **os.environ,
             "PATH": f"{fake}:{os.environ['PATH']}",
             "SEAT_SSH_PUBKEYS": str(self.pubkeys),
-            "SEAT_SSH_HOSTS": f"remote|bash -c|{self.remote}",
+            "SEAT_SSH_HOSTS": f"exedore|bash -c|{self.files['exedore']}",
         }
         result = subprocess.run(
             ["bash", str(SCRIPT), "grant"], env=env, capture_output=True, text=True, check=False
         )
-        self.assertIn("remote: unreachable or failed", result.stdout)
-        self.assertEqual(self.remote.read_text(), "ssh-ed25519 SCOTT scott@breetai\n")
-        self.assertEqual([p.name for p in self.remote.parent.iterdir()], ["authorized_keys"])
+        self.assertIn("exedore: unreachable or failed", result.stdout)
+        self.assertEqual(self.files["exedore"].read_text(), "ssh-ed25519 SCOTT scott@breetai\n")
+        self.assertEqual([p.name for p in self.files["exedore"].parent.iterdir()], ["authorized_keys"])
 
     def test_a_public_key_that_is_not_base64_is_refused(self) -> None:
-        (self.pubkeys / "dmax1.pub").write_text("ssh-ed25519 AAAA\nevil dolza-dmax1\n")
         (self.pubkeys / "dmax1.pub").write_text("ssh-ed25519 AA,AA dolza-dmax1\n")
         result = self.run_tool("grant", "dmax1")
         self.assertNotEqual(result.returncode, 0)
@@ -174,18 +209,25 @@ class SeatSshTest(unittest.TestCase):
 
     def test_an_unreadable_file_is_never_replaced(self) -> None:
         # A path that is not a readable regular file is refused, untouched.
-        self.remote.unlink()
-        self.remote.mkdir()
-        (self.remote / "kept").write_text("x\n")
+        target = self.files["exedore"]
+        target.unlink()
+        target.mkdir()
+        (target / "kept").write_text("x\n")
         result = self.run_tool("grant")
-        self.assertIn("remote: unreachable or failed", result.stdout)
-        self.assertTrue(self.remote.is_dir())
-        self.assertEqual(sorted(p.name for p in self.remote.iterdir()), ["kept"])
+        self.assertIn("exedore: unreachable or failed", result.stdout)
+        self.assertTrue(target.is_dir())
+        self.assertEqual(sorted(p.name for p in target.iterdir()), ["kept"])
 
     def test_a_seat_name_is_never_a_pattern(self) -> None:
         result = self.run_tool("revoke", ".*")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("not a seat name", result.stderr)
+
+    def test_list_shows_the_seats_each_host_accepts(self) -> None:
+        self.run_tool("grant", "vertex1", "max1")
+        rows = dict(line.split(":", 1) for line in self.run_tool("list").stdout.splitlines())
+        self.assertEqual(sorted(rows["gloval"].split()), ["max1", "vertex1"])
+        self.assertEqual(rows["dolza"].split(), ["vertex1"])
 
 
 SEAT = Path(__file__).resolve().parent.parent / "tools/seat-ssh/seat"
