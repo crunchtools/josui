@@ -11,7 +11,11 @@
 # bvertex1-2 (breetai), plus Prime (josui). A seat's line is tagged with its
 # key comment <host>-<seat> (dolza-dmax1, exedore-max3, breetai-bvertex2).
 # Every seat key is root on gloval and exedore; a Vertex-billing seat (vertex,
-# bvertex) is also smccarty on dolza and breetai. Each line is
+# bvertex) is also smccarty and root on dolza and breetai (a1769). This tool
+# writes only the files it reaches unprivileged: root on gloval and exedore,
+# smccarty on dolza and breetai. The Vertex root lines on the two desktops go
+# in through the seat-fence sudo paste Scott runs (crunchtools/seat-fence
+# README step S7), never from here. Each line is
 # `from="<pin>",restrict,pty`: <pin> is where that seat's ssh arrives from as
 # the target sees it (ssh-from.tsv in crunchtools/seat-fence), no port, agent
 # or X11 forwarding, a pty for interactive work. Prime keeps its own
@@ -70,9 +74,11 @@ pin() {   # pin <seat-host> <target>
     *) return 1 ;;
   esac
 }
-# Does <target> carry <seat>'s key? Everyone is on gloval and exedore;
-# dolza takes Prime and the Vertex-billing seats, breetai only the Vertex-billing
-# seats (README S3: Prime's key is off breetai).
+# Does <target>'s file this tool writes carry <seat>'s key? Everyone is on
+# gloval and exedore (root); dolza's smccarty file takes Prime and the
+# Vertex-billing seats, breetai's only the Vertex-billing seats (README S3:
+# Prime's key is off breetai). The desktops' /root files (Vertex only, a1769)
+# are not this tool's: the seat-fence sudo paste installs them.
 belongs() {
   case $2 in
     gloval | exedore) return 0 ;;
