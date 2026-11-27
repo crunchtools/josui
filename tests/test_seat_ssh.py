@@ -262,10 +262,12 @@ class SeatAttachTest(unittest.TestCase):
         for tool, body in stubs.items():
             (self.bin / tool).write_text(f"#!/bin/sh\n{body}\n")
             (self.bin / tool).chmod(0o755)
+        # The labels and container names below are Dolza's, wherever this runs.
+        self.env = {**os.environ, "PATH": f"{self.bin}:{os.environ['PATH']}", "SEAT_HOST": "dolza"}
 
     def attach(self, link: str, *args: str, claude_agent: bool = False) -> subprocess.CompletedProcess[str]:
         (self.bin / link).symlink_to(SEAT)
-        env = {**os.environ, "PATH": f"{self.bin}:{os.environ['PATH']}"}
+        env = dict(self.env)
         env.pop("CLAUDE_AGENT", None)
         if claude_agent:
             env["CLAUDE_AGENT"] = "1"
@@ -300,7 +302,7 @@ class SeatAttachTest(unittest.TestCase):
 
     def test_the_tab_is_titled_with_the_seat_name_on_a_terminal(self) -> None:
         (self.bin / "v2").symlink_to(SEAT)
-        env = {**os.environ, "PATH": f"{self.bin}:{os.environ['PATH']}"}
+        env = self.env
         # A pty stands in for the terminal; piped output gets no title.
         primary, secondary = pty.openpty()
         subprocess.run([str(self.bin / "v2")], env=env, stdout=secondary, check=False)
@@ -311,7 +313,7 @@ class SeatAttachTest(unittest.TestCase):
         self.assertNotIn("\033]0;", self.attach("m1").stdout)
 
     def test_every_kind_of_seat_gets_its_session_name(self) -> None:
-        env = {**os.environ, "PATH": f"{self.bin}:{os.environ['PATH']}"}
+        env = self.env
         for link, title in (
             ("v3", "Dolza 3 - Vertex"),
             ("m2", "Dolza 2 - Max"),

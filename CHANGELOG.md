@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- `tools/seat-ssh/seat` reads the host from bash's `$HOSTNAME` instead of `hostname -s`, so it runs where no `hostname` binary is installed (the sdlc 0.18 image), and its tests pin `SEAT_HOST=dolza` so they pass on any host (a1881).
+
 ### Added
 - `deploy/breetai/trentina.container`: Breetai's gateway quadlet, its address on
   `crunchtools` pinned to `10.89.0.55` as Dolza's is, so a gateway restart no longer
