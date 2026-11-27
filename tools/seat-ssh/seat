@@ -7,7 +7,8 @@
 #
 # On breetai the same links reach breetai's own seats: v1, v2 are
 # bvertex1-2 and m1, m2 are bmax1-2 (Breetai N - Vertex/Max). The host is
-# read from `hostname -s`; SEAT_HOST overrides it.
+# read from bash's $HOSTNAME, short form, so no `hostname` binary is
+# needed; SEAT_HOST overrides it.
 #
 # `v2 shell` opens the seat's shell window instead, on the old image only.
 # Ctrl-b d detaches and leaves the session running.
@@ -38,7 +39,7 @@ exec tmux -u "$@" set -g status-style "bg=default,fg=colour244" \; \
 tmux_cmd=(sh -c "$inner" seat "$window")
 # The terminal tab is titled with the seat's name, so several are told apart
 # at a glance; tmux leaves the title alone (set-titles is off by default).
-host=${SEAT_HOST:-$(hostname -s)}
+host=${SEAT_HOST:-${HOSTNAME%%.*}}
 case "$host" in
   breetai) site=Breetai vpre=bvertex mpre=bmax ;;
   *)       site=Dolza   vpre=vertex  mpre=dmax ;;
