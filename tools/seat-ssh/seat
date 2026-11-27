@@ -5,6 +5,10 @@
 #   v1..v4   Dolza 1-4 - Vertex      m1..m4   Dolza 1-4 - Max
 #   x1..x4   Exedore 1-4 - Max       prime    Josui Prime
 #
+# On breetai the same links reach breetai's own seats: v1, v2 are
+# bvertex1-2 and m1, m2 are bmax1-2 (Breetai N - Vertex/Max). The host is
+# read from `hostname -s`; SEAT_HOST overrides it.
+#
 # `v2 shell` opens the seat's shell window instead, on the old image only.
 # Ctrl-b d detaches and leaves the session running.
 set -euo pipefail
@@ -34,17 +38,22 @@ exec tmux -u "$@" set -g status-style "bg=default,fg=colour244" \; \
 tmux_cmd=(sh -c "$inner" seat "$window")
 # The terminal tab is titled with the seat's name, so several are told apart
 # at a glance; tmux leaves the title alone (set-titles is off by default).
+host=${SEAT_HOST:-$(hostname -s)}
+case "$host" in
+  breetai) site=Breetai vpre=bvertex mpre=bmax ;;
+  *)       site=Dolza   vpre=vertex  mpre=dmax ;;
+esac
 case "$name" in
-  v[1-4]) label="Dolza ${name#v} - Vertex" ;;
-  m[1-4]) label="Dolza ${name#m} - Max" ;;
+  v[1-4]) label="$site ${name#v} - Vertex" ;;
+  m[1-4]) label="$site ${name#m} - Max" ;;
   x[1-4]) label="Exedore ${name#x} - Max" ;;
   prime)  label="Josui Prime" ;;
   *)      label= ;;
 esac
 [ -n "$label" ] && [ -t 1 ] && printf '\033]0;%s\007' "$label"
 case "$name" in
-  v[1-4])  exec podman exec -it "vertex${name#v}" "${tmux_cmd[@]}" ;;
-  m[1-4])  exec podman exec -it "dmax${name#m}" "${tmux_cmd[@]}" ;;
+  v[1-4])  exec podman exec -it "$vpre${name#v}" "${tmux_cmd[@]}" ;;
+  m[1-4])  exec podman exec -it "$mpre${name#m}" "${tmux_cmd[@]}" ;;
   # @Q writes $'...' words, so exedore's login shell must be bash, zsh or ksh (it is).
   x[1-4])  exec ssh -t exedore podman exec -it "max${name#x}" "${tmux_cmd[@]@Q}" ;;
   prime)   exec podman exec -it josui "${tmux_cmd[@]}" ;;
