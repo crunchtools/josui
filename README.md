@@ -3,7 +3,7 @@
 Josui, Claude Code run as a crunchtools autonomous agent: its deployment (the
 quadlets in `deploy/`), the host tools beside it (`tools/`) and its
 constitution. This repo builds no image. Josui and every seat run
-[`quay.io/crunchtools/developer`](https://github.com/crunchtools/developer),
+[`quay.io/crunchtools/claude`](https://github.com/crunchtools/claude),
 whose image is tooling only; who the agent is and what it may touch are
 mounted in at run time. Until 1.0.0 this repo built `quay.io/crunchtools/josui`;
 that image is no longer built.
@@ -141,7 +141,7 @@ reaches it by text, and claude.ai shows only the server's sessions.
 - Built-ins by text: `/clear`, `/compact`, `/model`, `/effort`, `/fast`,
   `/goal`, `/mcp reconnect`, `/reload-skills`, `/reload-plugins`; each texts
   back its result. Other `/names` run as skills; `!` is refused.
-- `podman exec -it <service> claude-agent attach` shows the session live;
+- `podman exec -it <service> claude-supervisor attach` shows the session live;
   `--rw` to answer its working-directory trust question.
 - When either Claude process ends, the container ends and the unit restarts
   both.
@@ -177,7 +177,7 @@ podman run --rm -it \
   --network <the unit's network or pod> \
   --env-file <the unit's env file> \
   -v <the state volume>:/home/podman:Z \
-  --entrypoint claude quay.io/crunchtools/developer:latest auth login
+  --entrypoint claude quay.io/crunchtools/claude:latest auth login
 systemctl --user start <service>
 ```
 
@@ -196,7 +196,7 @@ reports EOF:
 install -m 755 /dev/stdin /tmp/login.sh <<'SH'
 #!/bin/bash
 exec podman run --rm -it <the options above> \
-  --entrypoint claude quay.io/crunchtools/developer:latest auth login
+  --entrypoint claude quay.io/crunchtools/claude:latest auth login
 SH
 
 mkfifo /tmp/login.fifo
@@ -206,7 +206,7 @@ printf '%s\n' '<the code>' > /tmp/login.fifo
 ```
 
 Then restart the service. A new working directory also needs its trust
-question answered once: `podman exec -it <service> claude-agent attach --rw`.
+question answered once: `podman exec -it <service> claude-supervisor attach --rw`.
 
 ## Environment
 
@@ -225,13 +225,13 @@ question answered once: `podman exec -it <service> claude-agent attach --rw`.
 | `JOSUI_MATRIX_ALLOW` | unset | Comma list of the exact Matrix IDs whose messages reach the session. Empty lets nothing through. |
 | `JOSUI_MAX_TOOL_CALLS`, `JOSUI_MAX_REPEAT` | `500`, `5` | Circuit breakers. |
 | `JOSUI_DEBUG_FILE` | audit dir + `/remote-control.log` | Remote Control's `--debug-file`, emptied at each start. Read it first when a session does not appear. |
-| `JOSUI_MODE` | `server` | `worker` runs one named interactive Claude Code instead of the Remote Control server. Without `JOSUI_MATRIX_HOMESERVER` it is in tmux session `dev` (the seats). With it, it is a supervised worker: `claude-agent run` holds the one conversation, which the Matrix bridge, Remote Control and `claude-agent send` all reach, with no `dev` session (Josui Prime). `JOSUI_RC=1` turns Remote Control on for that conversation. |
+| `JOSUI_MODE` | `server` | `worker` runs one named interactive Claude Code instead of the Remote Control server. Without `JOSUI_MATRIX_HOMESERVER` it is in tmux session `dev` (the seats). With it, it is a supervised worker: `claude-agent run` holds the one conversation, which the Matrix bridge, Remote Control and `claude-supervisor send` all reach, with no `dev` session (Josui Prime). `JOSUI_RC=1` turns Remote Control on for that conversation. |
 | `JOSUI_TMUX` | unset | `1` starts a detached tmux session `dev` holding an interactive Claude Code beside the server. See [Attaching](#attaching). |
 | `JOSUI_SSH_DIR` | `/etc/josui/ssh` | Where the [fallback](#fallback-into-the-host)'s key, config and known_hosts are mounted. |
 | `JOSUI_CONFIG_DIR`, `JOSUI_SKILLS_DIR` | set in the image | Where the identity and skills mounts are read from. |
 
 The developer image's entrypoint reads these. Its
-[`developer-entrypoint`](https://github.com/crunchtools/developer/blob/main/rootfs/usr/local/bin/developer-entrypoint)
+[`developer-entrypoint`](https://github.com/crunchtools/claude/blob/main/rootfs/usr/local/bin/developer-entrypoint)
 is the authority when this table and it disagree.
 
 ## Attaching
@@ -241,7 +241,7 @@ copy that is worked *in* there is a terminal:
 
 ```bash
 podman exec -it <service> tmux attach -t dev          # a seat: JOSUI_MODE=worker, or JOSUI_TMUX=1
-podman exec -it <service> claude-agent attach --rw    # a supervised worker (Josui Prime); read-only without --rw
+podman exec -it <service> claude-supervisor attach --rw    # a supervised worker (Josui Prime); read-only without --rw
 ```
 
 A supervised worker has no `dev` session: claude-agent holds its one
@@ -293,9 +293,9 @@ connectivity failure at all.
 
 This repo built two images and builds none now. The development image, once
 `Containerfile.dev` here, moved to
-[crunchtools/developer](https://github.com/crunchtools/developer) on
+[crunchtools/claude](https://github.com/crunchtools/claude) on
 2026-11-06. Josui's own `quay.io/crunchtools/josui` was retired in 1.0.0, once
-Josui Prime and every seat ran `quay.io/crunchtools/developer:latest`. Its
+Josui Prime and every seat ran `quay.io/crunchtools/claude:latest`. Its
 published tags stay where they are and no longer move. A new Claude Code or
 claude-agent reaches Josui through the developer image.
 

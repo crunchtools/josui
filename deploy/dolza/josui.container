@@ -11,7 +11,7 @@ Wants=network-online.target
 After=network-online.target trentina.service
 
 [Container]
-Image=quay.io/crunchtools/developer:latest
+Image=quay.io/crunchtools/claude:latest
 ContainerName=josui
 Pod=agents.pod
 AutoUpdate=registry

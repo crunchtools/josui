@@ -16,7 +16,7 @@ live files are the ones that run; when one changes, update the copy here too.
 - `josui.container`: Josui Prime, a supervised worker (`JOSUI_MODE=worker`
   with `JOSUI_MATRIX_HOMESERVER`): `claude-agent run` holds its one
   conversation, reached by text, Remote Control and voice. Attach with
-  `podman exec -it josui claude-agent attach --rw` from outside tmux. SELinux labels stay on: its
+  `podman exec -it josui claude-supervisor attach --rw` from outside tmux. SELinux labels stay on: its
   own mounts are private (`:Z`), and the two shared directories carry the
   shared label (`:z`). Measured 2026-11-14: Prime, confined as `container_t`,
   and the label-disabled Vertex workers connect to each other's sockets in both
@@ -35,7 +35,7 @@ live files are the ones that run; when one changes, update the copy here too.
 - `trentina.container`: Dolza's own gateway, which every member reaches as
   `trentina` on the `crunchtools` network. Its address is pinned
   (`ip=10.89.0.55`) because `gatehouse.env` names it as a literal
-  (crunchtools/developer#89), and an address that moves on a gateway restart
+  (crunchtools/claude#89), and an address that moves on a gateway restart
   breaks every seat's pre-push Gatehouse. The network was created by hand, not
   by a quadlet, so its dynamic range lives in podman's
   `~/.local/share/containers/storage/networks/crunchtools.json`:
