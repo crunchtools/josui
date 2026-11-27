@@ -12,7 +12,7 @@ After=srv-secrets@dmax.service josui.service
 Description=Dolza (Max) worker %i (agents pod)
 
 [Container]
-Image=quay.io/crunchtools/developer:latest
+Image=quay.io/crunchtools/claude:latest
 ContainerName=dmax%i
 Pod=agents.pod
 ReadOnly=true

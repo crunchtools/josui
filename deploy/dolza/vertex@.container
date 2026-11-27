@@ -12,7 +12,7 @@ After=srv-secrets@vertex.service josui.service
 Description=Vertex worker %i (agents pod)
 
 [Container]
-Image=quay.io/crunchtools/developer:latest
+Image=quay.io/crunchtools/claude:latest
 ContainerName=vertex%i
 Pod=agents.pod
 ReadOnly=true

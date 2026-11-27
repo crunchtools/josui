@@ -11,7 +11,7 @@ After=network-online.target
 RequiresMountsFor=/var/mnt/onsite
 
 [Container]
-Image=quay.io/crunchtools/developer:latest
+Image=quay.io/crunchtools/claude:latest
 ContainerName=max1
 HostName=max1
 ReadOnly=true
