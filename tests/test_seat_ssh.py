@@ -1,4 +1,12 @@
-"""tools/seat-ssh/seat-ssh: one tagged, restricted line per seat on every host."""
+"""tools/seat-ssh/seat-ssh: one tagged, restricted line per seat on every host.
+
+Every seat key is root on gloval and exedore; a Vertex-billing seat is also
+smccarty and root on dolza and breetai (a1769). This tool writes only the files
+it reaches unprivileged -- root on gloval and exedore, smccarty on the two
+desktops -- so these tests cover those. The Vertex root lines on dolza and
+breetai go in through the seat-fence sudo paste (seat-fence README S7), not from
+this tool, so there is nothing here to exercise for them.
+"""
 
 from __future__ import annotations
 
@@ -91,6 +99,10 @@ class SeatSshTest(unittest.TestCase):
         self.assertIn("SCOTT scott@breetai", self.files["exedore"].read_text())
 
     def test_only_vertex_billing_seats_and_prime_reach_dolza_and_breetai(self) -> None:
+        # The desktop files this tool writes are smccarty's: the Vertex seats
+        # (and Prime on dolza). The Vertex seats are also root on dolza and
+        # breetai (a1769), but that /root file is installed by the seat-fence
+        # sudo paste, not here, so it is not asserted.
         self.run_tool("grant")
         for host in ("dolza", "breetai"):
             with self.subTest(host=host):
